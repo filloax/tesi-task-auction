@@ -1,10 +1,14 @@
-import random
+import time, sys, math, random
 import numpy as np
 from mpi4py import MPI
 from disropt.agents import Agent
 
-import time
-import math
+import argparse
+
+parser = argparse.ArgumentParser(description='Distributed task assignment algorithm.')
+parser.add_argument('-v', '--verbose', required=False, action='store_true')
+parser.add_argument('--hide-bids', required=False, action='store_true', help="Don't print bids")
+args = parser.parse_args()
 
 comm = MPI.COMM_WORLD
 num_agents = comm.Get_size()
@@ -28,7 +32,10 @@ class TaskAgent:
         self.assigned_tasks = np.zeros(len(tasks))
         np.random.seed(math.floor(local_rank + time.time()))
         self.bids = np.random.random(len(tasks))
-        lprint("Bids for agent {}: {}".format(self.id, self.bids))
+        if args.verbose:
+            lprint("Bids for agent {}: {}".format(self.id, self.bids))
+        elif not args.hide_bids:
+            print("{} bids: {}".format(self.id, self.bids), file=sys.stderr)
         # ogni agente prova a mantenere aggiornato ciò che sa dei dati circostanti di bid massimi
         # quindi mantiene l'intera matrice (una riga per agente) da aggiornare all'evenienza
         self.max_bids = np.zeros((num_agents, len(tasks)))
@@ -44,7 +51,8 @@ class TaskAgent:
             # print(self.id, self, valid_tasks)
             if sum(valid_tasks) > 0:
                 self.selected_task = find_max_index(valid_tasks[j] * self.bids[j] for j in tasks)[0] # Trova il punto di massimo, equivalente a argmax(h * c)
-                lprint("Selected", self.selected_task)
+                if args.verbose:
+                    lprint("Selected", self.selected_task)
                 self.assigned_tasks[ self.selected_task ] = 1
                 self.max_bids[self.id][self.selected_task] = self.bids[self.selected_task]            
 
@@ -63,7 +71,8 @@ class TaskAgent:
         #lprint("New max bids:", self.max_bids[self.id])
 
         if not (self.id in max_bid_agents):
-            lprint( "Higher bid exists as {}, removing...".format(max_bid_agents) )
+            if args.verbose:
+                lprint( "Higher bid exists as {}, removing...".format(max_bid_agents) )
             self.assigned_tasks[self.selected_task] = 0
         #lprint("- - - - - - - -")
 
@@ -90,7 +99,8 @@ def lprint(*arg):
 
 ## Run
 
-lprint("Neighbors:", neighbors)
+if args.verbose:
+    lprint("Neighbors:", neighbors)
 agent = Agent(in_neighbors=neighbors,
             out_neighbors=neighbors)
 
@@ -126,17 +136,20 @@ while not done:
             if task_agent.max_bids_equal_cnt >= 3:
                 done = True
     
-    time.sleep(0.2)
+    #time.sleep(0.2)
 
-print("\n###################")
-lprint("Results in {} runs:".format(runs))
-lprint("Assigned tasks:")
-lprint(task_agent.assigned_tasks)
-lprint("-------------------")
-lprint("Max bids:")
-lprint(task_agent.max_bids[task_agent.id])
-lprint("-------------------")
-lprint("Bids:")
-lprint(task_agent.bids)
-lprint("Done!")
-print("###################\n")
+if args.verbose:
+    print("\n###################")
+    lprint("Results in {} runs:".format(runs))
+    lprint("Assigned tasks:")
+    lprint(task_agent.assigned_tasks)
+    lprint("-------------------")
+    lprint("Max bids:")
+    lprint(task_agent.max_bids[task_agent.id])
+    lprint("-------------------")
+    lprint("Bids:")
+    lprint(task_agent.bids)
+    lprint("Done!")
+    print("###################\n")
+else:
+    print("{}:{}".format(task_agent.id, " ".join(map(lambda x: str(int(x)), task_agent.assigned_tasks))))
