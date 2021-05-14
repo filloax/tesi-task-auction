@@ -5,9 +5,10 @@ from disropt.agents import Agent
 
 import argparse
 
+start_time = time.time()
+
 parser = argparse.ArgumentParser(description='Distributed task assignment algorithm.')
-parser.add_argument('-v', '--verbose', required=False, action='store_true')
-parser.add_argument('--hide-bids', required=False, action='store_true', help="Don't print bids")
+parser.add_argument('-v', '--verbose', required=False, nargs='?', const=1, type=int)
 args = parser.parse_args()
 
 comm = MPI.COMM_WORLD
@@ -34,8 +35,7 @@ class TaskAgent:
         self.bids = np.random.random(len(tasks))
         if args.verbose:
             lprint("Bids for agent {}: {}".format(self.id, self.bids))
-        elif not args.hide_bids:
-            print("{} bids: {}".format(self.id, self.bids), file=sys.stderr)
+        print("{} bids: {}".format(self.id, self.bids), file=sys.stderr)
         # ogni agente prova a mantenere aggiornato ciò che sa dei dati circostanti di bid massimi
         # quindi mantiene l'intera matrice (una riga per agente) da aggiornare all'evenienza
         self.max_bids = np.zeros((num_agents, len(tasks)))
@@ -93,8 +93,10 @@ def find_max_index(arr):
             indices.append(i)
     return indices
 
+runs = 0
+
 def lprint(*arg):
-    print(local_rank, *arg)
+    print(local_rank, "#{}".format(runs), *arg)
 
 
 ## Run
@@ -107,14 +109,14 @@ agent = Agent(in_neighbors=neighbors,
 task_agent = TaskAgent(agent.id)
 
 done = False
-runs = 0
 
 while not done:
     runs += 1
     task_agent.auction_phase()
 
-    #lprint("Sending: {} to {}".format(task_agent.max_bids[task_agent.id], neighbors))
-    agent.neighbors_send(task_agent.max_bids[task_agent.id])
+    if task_agent.max_bids_equal_cnt == 0: #se è cambiato dall'ultima iterazione, per evitare invii inutili
+        #lprint("Sending: {} to {}".format(task_agent.max_bids[task_agent.id], neighbors))
+        agent.neighbors_send(task_agent.max_bids[task_agent.id])
     data = agent.neighbors_receive_asynchronous()
 
     for other_id in filter(lambda id: id != local_rank, data):
@@ -125,18 +127,26 @@ while not done:
     # Controlla terminazione: se la lista max_bids è rimasta
     # invariata per 3 (arbitrario) iterazioni, e nessun elemento è 0
 
-    #Se tutti elementi sono != 0 e ha un task assegnato
-    if np.all((task_agent.max_bids[task_agent.id] != 0)) and np.sum(task_agent.assigned_tasks) == 1:
-        # Confronto tra array numpy
-        if not (task_agent.max_bids[task_agent.id] == task_agent.prev_max_bids).all():
-            task_agent.prev_max_bids = task_agent.max_bids[task_agent.id].copy()
-            task_agent.max_bids_equal_cnt = 0
-        else:
-            task_agent.max_bids_equal_cnt += 1
-            if task_agent.max_bids_equal_cnt >= 3:
-                done = True
+    if not (task_agent.max_bids[task_agent.id] == task_agent.prev_max_bids).all():
+        task_agent.prev_max_bids = task_agent.max_bids[task_agent.id].copy()
+        task_agent.max_bids_equal_cnt = 0
+        if args.verbose and args.verbose >= 2:
+            lprint("Max bids table changed:", task_agent.max_bids[task_agent.id])
+    else:
+        task_agent.max_bids_equal_cnt += 1
+
+
+    #Se tutti elementi sono != 0 e ha un task assegnato, e la lista è rimasta invariata per 3 iterazioni
+    if np.all((task_agent.max_bids[task_agent.id] != 0)) and np.sum(task_agent.assigned_tasks) == 1 and task_agent.max_bids_equal_cnt >= 3:
+        done = True
     
-    #time.sleep(0.2)
+    # Non mettere nessun tipo di attesa aumentava in maniera sostanziale le iterazioni
+    # (da una media di 20 iterazioni con 8 agenti, a una media di 500 molto variabile)
+    # Questo probabilmente per maggiori difficoltà nella trasmissione/ricezione di dati
+    # con un uso del canale più frequente.
+    time.sleep(0.1)
+
+print("{}: Done in {:.2f}s, {} iterations".format(local_rank, time.time() - start_time, runs), file=sys.stderr)
 
 if args.verbose:
     print("\n###################")
