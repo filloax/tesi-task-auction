@@ -1,4 +1,4 @@
-import time, sys, math, random
+import time, sys, math
 import numpy as np
 from mpi4py import MPI
 from disropt.agents import Agent
@@ -114,10 +114,10 @@ while not done:
     runs += 1
     task_agent.auction_phase()
 
-    if task_agent.max_bids_equal_cnt == 0: #se è cambiato dall'ultima iterazione, per evitare invii inutili
-        #lprint("Sending: {} to {}".format(task_agent.max_bids[task_agent.id], neighbors))
-        agent.neighbors_send(task_agent.max_bids[task_agent.id])
-    data = agent.neighbors_receive_asynchronous()
+    # if task_agent.max_bids_equal_cnt == 0: #se è cambiato dall'ultima iterazione, per evitare invii inutili
+    #     #lprint("Sending: {} to {}".format(task_agent.max_bids[task_agent.id], neighbors))
+    #     agent.neighbors_send(task_agent.max_bids[task_agent.id])
+    data = agent.neighbors_exchange(task_agent.max_bids[task_agent.id])
 
     for other_id in filter(lambda id: id != local_rank, data):
         task_agent.max_bids[other_id] = data[other_id]
@@ -136,15 +136,17 @@ while not done:
         task_agent.max_bids_equal_cnt += 1
 
 
-    #Se tutti elementi sono != 0 e ha un task assegnato, e la lista è rimasta invariata per 3 iterazioni
-    if np.all((task_agent.max_bids[task_agent.id] != 0)) and np.sum(task_agent.assigned_tasks) == 1 and task_agent.max_bids_equal_cnt >= 3:
+    #Se tutti elementi sono != 0 e ha un task assegnato, e la lista è rimasta invariata per 2N+1 iterazioni
+    if np.all((task_agent.max_bids[task_agent.id] != 0)) and np.sum(task_agent.assigned_tasks) == 1 and task_agent.max_bids_equal_cnt >= 2 * num_agents + 1:
+        agent.neighbors_send(task_agent.max_bids[task_agent.id]) # Evitare hang di altri agenti ancora in attesa
         done = True
     
-    # Non mettere nessun tipo di attesa aumentava in maniera sostanziale le iterazioni
-    # (da una media di 20 iterazioni con 8 agenti, a una media di 500 molto variabile)
-    # Questo probabilmente per maggiori difficoltà nella trasmissione/ricezione di dati
-    # con un uso del canale più frequente.
-    time.sleep(0.1)
+    # Non più necessario: vale solo se rimangono asincroni
+        # Non mettere nessun tipo di attesa aumentava in maniera sostanziale le iterazioni
+        # (da una media di 20 iterazioni con 8 agenti, a una media di 500 molto variabile)
+        # Questo probabilmente per maggiori difficoltà nella trasmissione/ricezione di dati
+        # con un uso del canale più frequente.
+        # time.sleep(0.1)
 
 print("{}: Done in {:.2f}s, {} iterations".format(local_rank, time.time() - start_time, runs), file=sys.stderr)
 
