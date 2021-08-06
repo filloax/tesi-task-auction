@@ -69,6 +69,22 @@ class TaskAgent:
             self.assigned_tasks[self.selected_task] = 0
         #lprint("- - - - - - - -")
 
+    def check_done(self):
+        # Controlla terminazione: se la lista max_bids è rimasta
+        # invariata per un certo numero di iterazioni (vedi check_done()), e nessun elemento è 0
+
+        if not (self.max_bids[self.id] == self.prev_max_bids).all():
+            self.prev_max_bids = self.max_bids[self.id].copy()
+            self.max_bids_equal_cnt = 0
+            if self.verbose and self.verbose >= 2:
+                print(self.id, "Max bids table changed:", self.max_bids[self.id])
+        else:
+            self.max_bids_equal_cnt += 1
+
+        # Numero di iterazioni senza alterazioni nello stato rilevante per considerare l'operazione finita
+        num_stable_runs = 2 * len(self.agent_ids) + 1
+        return np.all((self.max_bids[self.id] != 0)) and np.sum(self.assigned_tasks) == 1 and self.max_bids_equal_cnt >= num_stable_runs
+
     def run_iter(self):
         self.auction_phase()
 
@@ -82,20 +98,8 @@ class TaskAgent:
 
         self.converge_phase()
 
-        # Controlla terminazione: se la lista max_bids è rimasta
-        # invariata per 3 (arbitrario) iterazioni, e nessun elemento è 0
-
-        if not (self.max_bids[self.id] == self.prev_max_bids).all():
-            self.prev_max_bids = self.max_bids[self.id].copy()
-            self.max_bids_equal_cnt = 0
-            if self.verbose and self.verbose >= 2:
-                print(self.id, "Max bids table changed:", self.max_bids[self.id])
-        else:
-            self.max_bids_equal_cnt += 1
-
-
         #Se tutti elementi sono != 0 e ha un task assegnato, e la lista è rimasta invariata per 2N+1 iterazioni
-        if np.all((self.max_bids[self.id] != 0)) and np.sum(self.assigned_tasks) == 1 and self.max_bids_equal_cnt >= 2 * len(self.agent_ids) + 1:
+        if self.check_done():
             self.agent.neighbors_send(self.max_bids[self.id]) # Evitare hang di altri agenti ancora in attesa
             self.done = True
 
