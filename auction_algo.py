@@ -18,8 +18,6 @@ class AuctionAlgorithm:
         self.agent_ids = agent_ids
         self.verbose = verbose
 
-        print("{} bids: {}".format(self.id, self.bids), file=sys.stderr)
-
         self.done = False
         self.assigned_tasks = np.zeros(len(self.tasks))
         # ogni agente prova a mantenere aggiornato ciò che sa dei dati circostanti di bid massimi
