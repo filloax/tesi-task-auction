@@ -9,11 +9,11 @@ def find_max_index(arr):
     max_val = max(arr)
     return [idx for idx in range(len(arr)) if arr[idx] == max_val]
 
-class TaskAgent:
-    def __init__(self, id, bids, comm_agent: Agent, tasks, agent_ids, verbose = False):
+class AuctionAlgorithm:
+    def __init__(self, id, bids, agent: Agent, tasks, agent_ids, verbose = False):
         self.id = id
         self.bids = bids
-        self.agent = comm_agent
+        self.agent = agent
         self.tasks = tasks
         self.agent_ids = agent_ids
         self.verbose = verbose

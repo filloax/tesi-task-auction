@@ -1,7 +1,7 @@
 # lancio tramite
 # mpirun -np N python taskAssignDisropt.py
 
-from task_agent import TaskAgent
+from auction_algo import AuctionAlgorithm
 import time, sys, math
 import numpy as np
 from mpi4py import MPI
@@ -49,7 +49,7 @@ if args.verbose:
 agent = Agent(in_neighbors=neighbors,
             out_neighbors=neighbors)
 bids = np.random.random(len(tasks))
-task_agent = TaskAgent(agent.id, bids, agent, tasks, agent_ids)
+task_agent = AuctionAlgorithm(agent.id, bids, agent, tasks, agent_ids)
 
 if args.verbose:
     lprint("Bids for agent {}: {}".format(task_agent.id, task_agent.bids))

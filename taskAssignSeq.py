@@ -1,5 +1,5 @@
 import random
-from task_agent import TaskAgent
+from auction_algo import AuctionAlgorithm
 from disropt.functions import Variable
 from disropt.problems import Problem
 import numpy as np
@@ -25,7 +25,7 @@ def main():
     bids = [np.random.random(len(tasks)) * 40 for id in agent_ids]
 
     # Inizializza dati degli agenti
-    agents = [TaskAgent(id, bids[id], None, tasks, agent_ids) for id in agent_ids]
+    agents = [AuctionAlgorithm(id, bids[id], None, tasks, agent_ids) for id in agent_ids]
 
     try:
         done = False
@@ -62,7 +62,7 @@ def main():
 
             i = i + 1
 
-            # time.sleep(0.05)
+            # time.sleep(0s.05)
             # input()
 
     except KeyboardInterrupt:
