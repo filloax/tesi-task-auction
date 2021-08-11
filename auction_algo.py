@@ -2,13 +2,6 @@ import numpy as np
 from disropt.agents import Agent
 import sys
 
-# Più valori restituiti nel caso di pareggio
-# opzionalmente da gestire con criterio a parte, ma è
-# comunque abbastanza raro
-def find_max_index(arr):
-    max_val = max(arr)
-    return [idx for idx in range(len(arr)) if arr[idx] == max_val]
-
 class AuctionAlgorithm:
     def __init__(self, id, bids, agent: Agent, tasks, agent_ids, verbose = False):
         self.id = id
@@ -147,3 +140,11 @@ class AuctionAlgorithm:
     def __repr__(self):
         return str(self.__dict__)
 
+
+# Più valori restituiti nel caso di pareggio
+# opzionalmente da gestire con criterio a parte, ma è
+# comunque abbastanza raro
+# Equivalente di argmax
+def find_max_index(lst):
+    max_val = max(lst)
+    return [idx for idx in range(len(lst)) if lst[idx] == max_val]
