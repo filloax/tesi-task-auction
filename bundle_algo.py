@@ -1,6 +1,6 @@
 import numpy as np
 from disropt.agents import Agent
-import sys
+import time
 
 class BundleAlgorithm:
     def __init__(self, id, bids, agent: Agent, tasks, max_agent_tasks, agent_ids, verbose = False):
@@ -36,102 +36,7 @@ class BundleAlgorithm:
             self.task_path.insert(task_position + 1, self.selected_task)
             self.winning_bids[self.id][self.selected_task] = task_score_improvements[self.selected_task]
             self.winning_agents[self.id][self.selected_task] = self.id
-
-    def conflict_resolve_phase(self, iter_num="."):
-        for other_id in self.changed_ids:
-            task = 0
-            action_default = "leave"
-            # Prima chiave tabella: valori dell'agente vincitore secondo l'altro agente che
-            # ha inviate i dati;
-            # Seconda chiave tabella: valori dell'agente vincitore secondo questo agente
-            # Valori: stringa per valore action, o per condizionali lambda id -> stringa
-            case_table = {
-                other_id: {
-                    self.id: lambda id, rec_id: "update" if self.winning_bids[id][task] > self.winning_bids[self.id][task] else action_default,
-                    other_id: "update",
-                    "default": lambda id, rec_id: "update" if self.message_times[other_id][id] > self.message_times[self.id][id] or 
-                        self.winning_bids[other_id][task] > self.winning_bids[self.id][task] else action_default,
-                    -1: "update",
-                },
-                self.id: {
-                    self.id: "leave",
-                    other_id: "reset",
-                    "default": lambda id, rec_id: "reset" if self.message_times[other_id][id] > self.message_times[self.id][id] else action_default,
-                    -1: "leave",
-                },
-                "default": {
-                    self.id: lambda id, rec_id: "update" if self.message_times[other_id][id] > self.message_times[self.id][id] and 
-                        self.winning_bids[other_id][task] > self.winning_bids[self.id][task] else action_default,
-                    other_id: lambda id, rec_id: "update" if self.message_times[other_id][id] > self.message_times[self.id][id] else "reset",
-                    "this_id": lambda id, rec_id: "update" if self.message_times[other_id][id] > self.message_times[self.id][id] else action_default,
-                    "default": lambda id, rec_id:
-                        "update" if self.message_times[other_id][id] > self.message_times[self.id][id] and 
-                            (self.message_times[other_id][rec_id] > self.message_times[self.id][rec_id] or
-                            self.winning_bids[other_id][task] > self.winning_bids[self.id][task]) else
-                        ("reset" if self.message_times[other_id][rec_id] > self.message_times[self.id][rec_id] and
-                            self.message_times[self.id][id] > self.message_times[other_id][id] else action_default),
-                    -1: lambda id, rec_id: "update" if self.message_times[other_id][id] > self.message_times[self.id][id] else action_default,
-                },
-                -1: {
-                    self.id: "leave",
-                    other_id: "update",
-                    "default": lambda id, rec_id: "update" if self.message_times[other_id][id] > self.message_times[self.id][id] else action_default,
-                    -1: "leave",
-                },
-            }
-
-            main_ids = [self.id, other_id, -1]
-
-            sender_choice = self.winning_agents[other_id][task]
-            if not (sender_choice in main_ids):
-                sender_choice = "default"
-
-            this_choice = self.winning_agents[self.id][task]
-            if not (this_choice in main_ids):
-                if this_choice == sender_choice:
-                    this_choice = "this_id"
-                else:
-                    this_choice = "default"
-
-            choice = case_table.get(sender_choice).get(this_choice)
-
-            # Evaluate conditionals
-            if not (type(choice) is str):
-                choice = choice(sender_choice, this_choice)
-
-            changed = False
-
-            if choice == "update":
-                self.winning_bids[self.id][task] = self.winning_bids[other_id][task]
-                self.winning_agents[self.id][task] = self.winning_bids[other_id][task]
-                changed = True
-            elif choice == "reset":
-                self.winning_bids[self.id][task] = 0
-                self.winning_agents[self.id][task] = -1
-                changed = True
-
-            if changed and task in self.task_bundle:
-                start_idx = min(n for n in range(len(self.task_bundle)) if self.winning_agents[self.id][self.task_bundle[n]] != self.id)
-
-                for i in range(start_idx + 1, len(self.task_bundle)):
-                    self.winning_bids[self.id][self.task_bundle[i]] = 0
-                    self.winning_agents[self.id][self.task_bundle[i]] = -1
-
-                for i in range(start_idx, len(self.task_bundle)):
-                    self.task_bundle.pop()
-
-
-
-    def check_done(self, iter_num="."):
-        return False
-
-    # Da completare
-    # Funzione S_{ij}
-    def _calc_path_score(self, path):
-        if len(path) == 0:
-            return 0
-        return 0
-
+        
     # Per calcolare c_{ij} nell'algoritmo
     def _get_task_score_improvement(self, task):
         if task in self.task_bundle:
@@ -140,14 +45,133 @@ class BundleAlgorithm:
             start_score = self._calc_path_score(self.task_path)
             return max(self._calc_path_score(insert_in_list(self.task_path, n, task)) for n in range(len(self.task_path))) - start_score
 
-    def _ignores_task(self, task):
-        return self.bids[task] == 0
+    # Da completare
+    # Funzione S_{ij}
+    def _calc_path_score(self, path):
+        if len(path) == 0:
+            return 0
+        return 0
+
+    def conflict_resolve_phase(self, iter_num="."):
+        for other_id in self.changed_ids:
+            for task in self.tasks:
+                action_default = "leave"
+                # Prima chiave tabella: valori dell'agente vincitore secondo l'altro agente che
+                # ha inviate i dati;
+                # Seconda chiave tabella: valori dell'agente vincitore secondo questo agente
+                # Valori: stringa per valore action, o per condizionali lambda id -> stringa
+                case_table = {
+                    other_id: {
+                        self.id: lambda id, rec_id: "update" if bid_is_greater(self.winning_bids[id][task], self.winning_bids[self.id][task]) else action_default,
+                        other_id: "update",
+                        "default": lambda id, rec_id: "update" if self.message_times[other_id][id] > self.message_times[self.id][id] or 
+                            bid_is_greater(self.winning_bids[other_id][task], self.winning_bids[self.id][task]) else action_default,
+                        -1: "update",
+                    },
+                    self.id: {
+                        self.id: "leave",
+                        other_id: "reset",
+                        "default": lambda id, rec_id: "reset" if self.message_times[other_id][id] > self.message_times[self.id][id] else action_default,
+                        -1: "leave",
+                    },
+                    "default": {
+                        self.id: lambda id, rec_id: "update" if self.message_times[other_id][id] > self.message_times[self.id][id] and 
+                            bid_is_greater(self.winning_bids[other_id][task], self.winning_bids[self.id][task]) else action_default,
+                        other_id: lambda id, rec_id: "update" if self.message_times[other_id][id] > self.message_times[self.id][id] else "reset",
+                        "this_id": lambda id, rec_id: "update" if self.message_times[other_id][id] > self.message_times[self.id][id] else action_default,
+                        "default": lambda id, rec_id:
+                            "update" if self.message_times[other_id][id] > self.message_times[self.id][id] and 
+                                (self.message_times[other_id][rec_id] > self.message_times[self.id][rec_id] or
+                                bid_is_greater(self.winning_bids[other_id][task], self.winning_bids[self.id][task])) else
+                            ("reset" if self.message_times[other_id][rec_id] > self.message_times[self.id][rec_id] and
+                                self.message_times[self.id][id] > self.message_times[other_id][id] else action_default),
+                        -1: lambda id, rec_id: "update" if self.message_times[other_id][id] > self.message_times[self.id][id] else action_default,
+                    },
+                    -1: {
+                        self.id: "leave",
+                        other_id: "update",
+                        "default": lambda id, rec_id: "update" if self.message_times[other_id][id] > self.message_times[self.id][id] else action_default,
+                        -1: "leave",
+                    },
+                }
+
+                main_ids = [self.id, other_id, -1]
+
+                sender_choice = self.winning_agents[other_id][task]
+                if not (sender_choice in main_ids):
+                    sender_choice = "default"
+
+                this_choice = self.winning_agents[self.id][task]
+                if not (this_choice in main_ids):
+                    if this_choice == sender_choice:
+                        this_choice = "this_id"
+                    else:
+                        this_choice = "default"
+
+                choice = case_table.get(sender_choice).get(this_choice)
+
+                # Evaluate conditionals
+                if not (type(choice) is str):
+                    choice = choice(sender_choice, this_choice)
+
+                changed = False
+
+                if choice == "update":
+                    self.winning_bids[self.id][task] = self.winning_bids[other_id][task]
+                    self.winning_agents[self.id][task] = self.winning_bids[other_id][task]
+                    changed = True
+                elif choice == "reset":
+                    self.winning_bids[self.id][task] = 0
+                    self.winning_agents[self.id][task] = -1
+                    changed = True
+
+                if changed and task in self.task_bundle:
+                    start_idx = min(n for n in range(len(self.task_bundle)) if self.winning_agents[self.id][self.task_bundle[n]] != self.id)
+
+                    for i in range(start_idx + 1, len(self.task_bundle)):
+                        self.winning_bids[self.id][self.task_bundle[i]] = 0
+                        self.winning_agents[self.id][self.task_bundle[i]] = -1
+
+                    for i in range(start_idx, len(self.task_bundle)):
+                        self.task_bundle.pop()
+
+
+    def check_done(self, iter_num="."):
+        return False
 
     def run_iter(self, iter_num = "."):
+        self.construct_phase(iter_num)
+
+        # if self.max_bids_equal_cnt == 0: #se è cambiato dall'ultima iterazione, per evitare invii inutili
+        #     #lprint("Sending: {} to {}".format(self.max_bids[self.id], neighbors))
+        #     agent.neighbors_send(self.max_bids[self.id])
+        print("pre exchange")
+        send_data = self._build_send_data()
+        data = self.agent.neighbors_exchange(send_data)
+        rec_time = time.time()
+        print("post exchange")
+
+        self.changed_ids = []
+        for other_id in filter(lambda id: id != self.id, data):
+            self.winning_agents[other_id] = data[other_id]["winning_agents"]
+            self.winning_bids[other_id] = data[other_id]["winning_bids"]
+            self.message_times[other_id] = data[other_id]["message_times"]
+            self.changed_ids.append(other_id)
+            self.message_times[self.id][other_id] = rec_time
+
+        self.conflict_resolve_phase(iter_num)
+
         #Se tutti elementi sono != 0 e ha un task assegnato, e la lista è rimasta invariata per 2N+1 iterazioni
         if self.check_done(iter_num):
-            self.agent.neighbors_send(self.max_bids[self.id]) # Evitare hang di altri agenti ancora in attesa
-            self.done = True
+            send_data = self._build_send_data()
+            self.agent.neighbors_send(send_data) # Evitare hang di altri agenti ancora in attesa
+
+    def _build_send_data(self):
+        return {
+                "winning_agents": self.winning_agents[self.id],
+                "winning_bids": self.winning_bids[self.id],
+                "message_times": self.message_times[self.id],
+        }
 
     def run(self, beforeEach = None, max_iterations = -1):
         iterations = 0
@@ -171,6 +195,9 @@ class BundleAlgorithm:
     def get_result(self):
         return (self.selected_task, self.assigned_tasks)
 
+    def _ignores_task(self, task):
+        return self.bids[task] == 0
+
     def __repr__(self):
         return str(self.__dict__)
 
@@ -191,4 +218,4 @@ def find_max_index(lst):
 
 # Ignora bid nulli (valore default) a scopo bid negativi
 def bid_is_greater(bid1, bid2):
-    return bid2 == 0 or bid1 > bid2
+    return not bid1 == 0 and (bid2 == 0 or bid1 > bid2)
