@@ -2,11 +2,25 @@ import numpy as np
 from disropt.agents import Agent
 import time
 
+class ScoreFunction:
+    def __init__(self, agent_id: int):
+        self.agent_id = agent_id
+
+    def eval(self, path: list) -> float:
+        if len(path) == 0:
+            return 0
+        else:
+            return self.do_eval(path)
+
+    def do_eval(self, path: list) -> float:
+        pass
+
 class BundleAlgorithm:
-    def __init__(self, id, bids, agent: Agent, tasks, max_agent_tasks, agent_ids, verbose = False):
+    def __init__(self, id, agent: Agent, score_function: ScoreFunction, tasks, max_agent_tasks, agent_ids, verbose = False):
         self.id = id
-        self.bids = bids
         self.agent = agent
+        # Funzione S(path, agent)
+        self.score_function = score_function
         self.max_agent_tasks = max_agent_tasks
         self.tasks = tasks
         self.agent_ids = agent_ids
@@ -14,9 +28,12 @@ class BundleAlgorithm:
 
         self.task_bundle = []
         self.task_path = []
+        self.assigned_tasks = np.zeros(len(self.tasks))
 
         self.winning_bids = np.zeros((len(self.agent_ids), len(self.tasks)))
         self.winning_agents = -np.ones((len(self.agent_ids), len(self.tasks)))
+        self.prev_win_bids = np.zeros(len(self.tasks))
+        self.win_bids_equal_cnt = 0
 
         self.message_times = np.zeros((len(self.agent_ids), len(self.agent_ids)))
         self.changed_ids = []
@@ -27,30 +44,46 @@ class BundleAlgorithm:
                 task: self._get_task_score_improvement(task) for task in self.tasks 
                     if not (task in self.task_bundle and not self._ignores_task(task))
             }
-            self.selected_task = find_max_index(task_score_improvements[task] for task in self.tasks 
-                if bid_is_greater(task_score_improvements[task], self.winning_bids[self.id][task]) )[0]
+            selected_task = -1
 
-            task_position = find_max_index(self._calc_path_score(insert_in_list(self.task_path, n, self.selected_task)) for n in range(len(self.task_path)))
+            if self.verbose:
+                print("{} | {}: task_score_improvements: {}".format(self.id, iter_num, task_score_improvements))
 
-            self.task_bundle.append(self.selected_task)
-            self.task_path.insert(task_position + 1, self.selected_task)
-            self.winning_bids[self.id][self.selected_task] = task_score_improvements[self.selected_task]
-            self.winning_agents[self.id][self.selected_task] = self.id
+            if any(filter(lambda task: task in task_score_improvements and bid_is_greater(task_score_improvements[task], self.winning_bids[self.id][task]), self.tasks)):
+                max_score_improvement = max(task_score_improvements[task] for task in task_score_improvements if bid_is_greater(task_score_improvements[task], self.winning_bids[self.id][task]))
+                
+                selected_task = [task for task in self.tasks if task in task_score_improvements and task_score_improvements[task] == max_score_improvement][0]
+
+            if selected_task < 0:
+                if self.verbose:
+                    print("{} | {}: Out of tasks".format(self.id, iter_num))
+                break
+
+            if self.verbose:
+                print("{} | {}: Selected task {}".format(self.id, iter_num, selected_task))
+
+            task_position = 0
+            if len(self.task_path) > 0:
+                task_position = find_max_index(self.score_function.eval(insert_in_list(self.task_path, n, selected_task)) for n in range(len(self.task_path)))[0]
+
+            self.assigned_tasks[selected_task] = 1
+            self.task_bundle.append(selected_task)
+            self.task_path.insert(task_position + 1, selected_task)
+            self.winning_bids[self.id][selected_task] = task_score_improvements[selected_task]
+            self.winning_agents[self.id][selected_task] = self.id
+        if self.verbose:
+            print("{} | {}: Phase end path: {}".format(self.id, iter_num, self.task_path))
         
     # Per calcolare c_{ij} nell'algoritmo
     def _get_task_score_improvement(self, task):
         if task in self.task_bundle:
             return 0
         else:
-            start_score = self._calc_path_score(self.task_path)
-            return max(self._calc_path_score(insert_in_list(self.task_path, n, task)) for n in range(len(self.task_path))) - start_score
-
-    # Da completare
-    # Funzione S_{ij}
-    def _calc_path_score(self, path):
-        if len(path) == 0:
-            return 0
-        return 0
+            start_score = self.score_function.eval(self.task_path)
+            if len(self.task_path) > 0:
+                return max(self.score_function.eval(insert_in_list(self.task_path, n, task)) for n in range(len(self.task_path))) - start_score
+            else:
+                return self.score_function.eval([task]) - start_score
 
     def conflict_resolve_phase(self, iter_num="."):
         for other_id in self.changed_ids:
@@ -97,28 +130,34 @@ class BundleAlgorithm:
 
                 main_ids = [self.id, other_id, -1]
 
-                sender_choice = self.winning_agents[other_id][task]
-                if not (sender_choice in main_ids):
+                sender_id = self.winning_agents[other_id][task]
+                sender_choice = ""
+                if not (sender_id in main_ids):
                     sender_choice = "default"
+                else:
+                    sender_choice = sender_id
 
-                this_choice = self.winning_agents[self.id][task]
-                if not (this_choice in main_ids):
-                    if this_choice == sender_choice:
+                this_id = self.winning_agents[self.id][task]
+                this_choice = ""
+                if not (this_id in main_ids):
+                    if this_id == sender_id:
                         this_choice = "this_id"
                     else:
                         this_choice = "default"
+                else:
+                    this_choice = this_id
 
                 choice = case_table.get(sender_choice).get(this_choice)
 
                 # Evaluate conditionals
                 if not (type(choice) is str):
-                    choice = choice(sender_choice, this_choice)
+                    choice = choice(int(sender_id), int(this_id))
 
                 changed = False
 
                 if choice == "update":
                     self.winning_bids[self.id][task] = self.winning_bids[other_id][task]
-                    self.winning_agents[self.id][task] = self.winning_bids[other_id][task]
+                    self.winning_agents[self.id][task] = self.winning_agents[other_id][task]
                     changed = True
                 elif choice == "reset":
                     self.winning_bids[self.id][task] = 0
@@ -133,11 +172,28 @@ class BundleAlgorithm:
                         self.winning_agents[self.id][self.task_bundle[i]] = -1
 
                     for i in range(start_idx, len(self.task_bundle)):
-                        self.task_bundle.pop()
+                        task2 = self.task_bundle.pop()
+                        self.task_path.remove(task2)
+                        self.assigned_tasks[task2] = 0
 
 
     def check_done(self, iter_num="."):
-        return False
+        # Se la lista dei bid è rimasta invariata
+        if not (self.winning_bids[self.id] == self.prev_win_bids).all():
+            self.prev_win_bids = self.winning_bids[self.id].copy()
+            self.win_bids_equal_cnt = 0
+            if self.verbose:
+                print("{} | {}: Max bids table changed: {}".format(self.id, iter_num, self.winning_bids[self.id]))
+        else:
+            self.win_bids_equal_cnt += 1
+
+        # Numero di iterazioni senza alterazioni nello stato rilevante per considerare l'operazione finita
+        num_stable_runs = 2 * len(self.agent_ids) + 1
+        # Se tutti i bid massimi sono stati ricevuti, ignorando quelli per i task che questo agente
+        # sta ignorando (vale a dire quelle per cui ha messo bid 0)
+        all_max_bids_set = all(self.winning_bids[self.id][task] != 0 for task in self.tasks if not self._ignores_task(task))
+
+        return sum(self.assigned_tasks) <= self.max_agent_tasks and all_max_bids_set and self.win_bids_equal_cnt >= num_stable_runs
 
     def run_iter(self, iter_num = "."):
         self.construct_phase(iter_num)
@@ -190,16 +246,40 @@ class BundleAlgorithm:
                 self.done = True
 
         if self.verbose:
-            print("{}: Done, selected task {}".format(self.id, self.selected_task))
+            print("{}: Done, selected tasks {}".format(self.id, self.task_path))
 
     def get_result(self):
-        return (self.selected_task, self.assigned_tasks)
+        return (self.task_path, self.task_bundle)
 
     def _ignores_task(self, task):
-        return self.bids[task] == 0
+        return False
 
     def __repr__(self):
         return str(self.__dict__)
+
+class TimeScoreFunction(ScoreFunction):
+    """
+    S_{i} function for the CBBA algorithm.
+
+    Init:
+    agent_id: id of the agent
+    time_discount_factors: float list containing static discount factors for each task
+    calc_time_fun: function(agent_id, task, path) -> float, to calculate agent travel time to arrive at task location
+        through the specified path.
+    task_static_scores: static scores for each tasks' result to be multiplied by, must be a list.
+    """
+    def __init__(self, agent_id, task_discount_factors: list, calc_time_fun, task_static_scores: list = None):
+        super().__init__(agent_id)
+        self.task_discount_factors = task_discount_factors
+        self.calc_time_fun = calc_time_fun
+        self.task_static_scores = task_static_scores
+
+    def do_eval(self, path: list) -> float:
+        return sum((self.task_discount_factors[task] ** self.calc_time_fun(self.agent_id, task, path)
+            * (self.task_static_scores[task] if not self.task_static_scores is None else 1)) for task in path)
+
+    
+
 
 
 ## Utilità
@@ -213,6 +293,9 @@ def insert_in_list(lst, pos, val):
 # comunque abbastanza raro
 # Equivalente di argmax
 def find_max_index(lst):
+    if type(lst) is not list:
+        lst = list(lst)
+
     max_val = max(lst)
     return [idx for idx in range(len(lst)) if lst[idx] == max_val]
 
