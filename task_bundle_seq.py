@@ -1,13 +1,11 @@
 import sys
 from bundle_algo import BundleAlgorithm, TimeScoreFunction
+from gen_task_bundle_positions import generate_positions, write_positions
 import random
-from auction_algo import AuctionAlgorithm
 from disropt.functions import Variable
 from disropt.problems import Problem
 import numpy as np
-import numpy.matlib as matlib
 import time
-
 import argparse
 
 from numpy.lib.function_base import average, select
@@ -44,13 +42,8 @@ def run(run = 0):
     # Diverso da CBAA: simula il caso specifico delle posizioni per dare un senso
     # alla generazione di un percorso, quindi non si limita a semplici bid casuali
     
-    plane_size = 40
-    
-    agent_positions = np.random.randint(-plane_size / 2, plane_size / 2, (N, 2))
-    task_positions = np.random.randint(-plane_size / 2, plane_size / 2, (num_tasks, 2))
-
-    print("Agent positions: \n{}".format({ id: agent_positions[id] for id in agent_ids }), file=sys.stderr)
-    print("Task positions: \n{}".format({ id: task_positions[id] for id in tasks }), file=sys.stderr)
+    (agent_positions, task_positions) = generate_positions(N, num_tasks)
+    write_positions(agent_positions, task_positions)
 
     def calc_time_fun(agent_id, task, path: list) -> float:
         if task in path:
@@ -73,6 +66,7 @@ def run(run = 0):
     try:
         done = False
         i = 1
+        start_time = time.time()
         while not done:
             order = list(range(N))
             random.shuffle(order)
@@ -80,12 +74,13 @@ def run(run = 0):
             done = True
             for id in order:
                 agents[id].construct_phase(i)
-                        
-                rec_time = time.time()
 
+                agents[id].changed_ids = []
                 # ricevi dati da altri agenti (invio è passivo)
                 for other_id in agent_ids:
                     if other_id != id and links[id][other_id] == 1:
+                        # time.sleep(random.random() * 0.01) # simula invio dati a momenti diversi
+                        rec_time = time.time() - start_time
                         agents[id].winning_agents[other_id] = agents[other_id].winning_agents[other_id]
                         agents[id].winning_bids[other_id] = agents[other_id].winning_bids[other_id]
                         agents[id].message_times[other_id] = agents[other_id].message_times[other_id]
@@ -100,14 +95,16 @@ def run(run = 0):
 
             if verbose:
                 print("Iter", i)
-                print("Winning bids [0]:")
-                print(agents[0].winning_bids[0])
+                print(np.array([agent.winning_bids[agent.id] for agent in agents]))
                 print("-------------------")
-                print("Winning agents [0]:")
-                print(agents[0].winning_agents[0])
+                print("Winning agents:")
+                print(np.array([agent.winning_agents[agent.id] for agent in agents]))
                 print("-------------------")
                 print("Task paths:")
-                print(np.array([agent.task_path for agent in agents]))
+                print("\n".join(["{}: {}".format(agent.id, agent.task_path) for agent in agents]))
+                print("-------------------")
+                print("Assigned tasks:")
+                print(np.array([agent.assigned_tasks for agent in agents]))
                 print("###################")
 
             i = i + 1
@@ -122,10 +119,15 @@ def run(run = 0):
 
     if not test_only:
         print("\n\nFinal version after", i, "iterations:")
-        print(agents[0].winning_bids)
+        print("###################")
+        print("Starting from:")
+        print("Agent positions: \n{}".format({ id: agent_positions[id] for id in agent_ids }), file=sys.stderr)
+        print("Task positions: \n{}".format({ id: task_positions[id] for id in tasks }), file=sys.stderr)
+        print("###################")
+        print(np.array([agent.winning_bids[agent.id] for agent in agents]))
         print("-------------------")
-        print("Winning agents [0]:")
-        print(agents[0].winning_agents)
+        print("Winning agents:")
+        print(np.array([agent.winning_agents[agent.id] for agent in agents]))
         print("-------------------")
         print("Task paths:")
         print("\n".join(["{}: {}".format(agent.id, agent.task_path) for agent in agents]))
