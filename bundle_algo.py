@@ -326,7 +326,6 @@ class BundleAlgorithm:
         if bid1 == bid2 and id1 >= 0 and id2 >= 0:
             return id1 > id2
 
-        # return not bid1 == 0 and (bid2 == 0 or bid1 > bid2)
         return bid1 > bid2
 
     def _ignores_task(self, task):

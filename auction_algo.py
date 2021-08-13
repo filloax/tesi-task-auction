@@ -1,7 +1,10 @@
 from os import error
+import random
 import numpy as np
 from disropt.agents import Agent
 import sys
+
+from numpy.lib.function_base import average
 
 class AuctionAlgorithm:
     def __init__(self, id, bids, agent: Agent, tasks, agent_ids, verbose = False):
@@ -54,38 +57,30 @@ class AuctionAlgorithm:
     def converge_phase(self, iter_num="."):
         # Aggiorna la propria lista dei bid massimi in base a quelli ricevuti dagli altri
         # agenti, in modo tale da avere l'effettivo bid globalmente massimo per ogni task
-        # La lista viene temporaneamente salvata in variabile a parte per permettere di capire da chi provengano
-        # eventuali cambiamenti durante questa fase, e il campo della classe è aggiornato solo alla fine
-        new_max_bids = np.array([max(self.max_bids[other_id][task] for other_id in self.agent_ids) for task in self.tasks])
-        temp_max_bids_table = np.concatenate((self.max_bids[:self.id], [new_max_bids], self.max_bids[self.id + 1:]))
-        
+        # ~~La lista viene temporaneamente salvata in variabile a parte per permettere di capire da chi provengano~~
+        # ~~eventuali cambiamenti durante questa fase, e il campo della classe è aggiornato solo alla fine~~
+        new_max_bids = np.array([max(self.max_bids[agent_id][task] for agent_id in self.agent_ids) for task in self.tasks])
+
+        # Spareggio in base a id non più necessario, quindi assegnato direttamente
+        self.max_bids[self.id] = new_max_bids
+
         # Se il proprio bid per il task selezionato non è quello più alto,
         # allora lascia il task selezionato all'agente che ha posto il bid
         # più alto, ne verrà cercato un'altro all'iterazione successiva
         if self.selected_task >= 0:
-            max_bid_for_selected_task = max(temp_max_bids_table[agent_id][self.selected_task] for agent_id in self.agent_ids)
-            max_bid_agent = -1
-            try:
-                # Usato per spareggio. NOTA: non rappresenta da quale agente provenga effettivamente
-                # il bid massimo, quale agente tra i vicini abbia inviato i dati che contenevano quell'informazione.
-                # Si può usare comunque per lo spareggio, che è di fatto arbitrario e solo necessario a evitare
-                # loop infiniti in caso di bid uguali.
-                max_bid_agent = next(agent_id for agent_id in self.agent_ids if self.max_bids[agent_id][self.selected_task] == max_bid_for_selected_task)
-            except StopIteration:
-                # Servirebbe solo per spareggio, non è necessariamente errore catastrofico (anche se ha brutte implicazioni, quindi log)
-                print("{} | {}: #######".format(self.id, iter_num))
-                print("{} | {}: WARNING: Couldn't find max_bid_agent, relevant data:".format(self.id, iter_num))
-                print("{} | {}: selected_task={}\tmax_bid_for_selected_task={}".format(self.id, iter_num, self.selected_task, max_bid_for_selected_task))
-                print("{} | {}: selected task bids={}".format(self.id, iter_num, [self.max_bids[agent_id][self.selected_task] for agent_id in self.agent_ids]))
-                print("{} | {}: #######".format(self.id, iter_num))
+            max_bid_for_selected_task = new_max_bids[self.selected_task]
 
-            if self._bid_is_greater(max_bid_for_selected_task, self.bids[self.selected_task], max_bid_agent, self.id):
+            if self._bid_is_greater(max_bid_for_selected_task, self.bids[self.selected_task]):
                 if self.verbose:
                     print("{} | {}: Higher bid exists as {}, removing...".format(self.id, iter_num, max_bid_for_selected_task) )
                 self.assigned_tasks[self.selected_task] = 0
                 self.selected_task = -1
-    
-        self.max_bids[self.id] = new_max_bids
+            elif self._bid_is_equal(max_bid_for_selected_task, self.bids[self.selected_task]):
+                #In caso di pareggio, aumenta casualmente il bid per spareggiare, in una quantità trascurabile relativamente ai bid
+                bid_average = average(self.max_bids)
+                max_increase = bid_average * 0.001
+                self.bids[self.selected_task] = self.bids[self.selected_task] + random.random() * max_increase
+                self.max_bids[self.id][self.selected_task] = self.bids[self.selected_task]
 
 
     def check_done(self, iter_num="."):
@@ -150,12 +145,14 @@ class AuctionAlgorithm:
     def get_result(self):
         return (self.selected_task, self.assigned_tasks)
 
-    # Spareggio in base a id se possibile
-    def _bid_is_greater(self, bid1, bid2, id1 = -1, id2 = -1):
-        if bid1 == bid2 and id1 >= 0 and id2 >= 0:
-            return id1 > id2
-        # return not bid1 == 0 and (bid2 == 0 or bid1 > bid2)
+    # Nessuno spareggio qua, viene modificato direttamente il bid
+    def _bid_is_greater(self, bid1, bid2):
+        # if bid1 == bid2 and id1 >= 0 and id2 >= 0:
+        #     return id1 > id2
         return bid1 > bid2
+
+    def _bid_is_equal(self, bid1, bid2):
+        return bid1 == bid2
 
     def _ignores_task(self, task):
         return False
