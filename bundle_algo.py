@@ -57,15 +57,23 @@ class BundleAlgorithm:
                 task: self._get_task_score_improvement(task) for task in self.tasks 
                     if task not in self.task_bundle and not self._ignores_task(task)
             }
+
+            if any(task_score_improvements[task] < 0 for task in task_score_improvements):
+                raise ValueError("Got negative score improvement in CBBA. Negative values are not supported, if you need to find a minimum instead of a maximum you can usually use 1/x, 0.y^x or similar somewhere in the score function.")
+
             selected_task = -1
 
             if self.verbose:
                 self.log(iter_num, "task_score_improvements: {}".format(task_score_improvements))
 
-            if any(task in task_score_improvements and bid_is_greater(task_score_improvements[task], self.winning_bids[self.id][task]) for task in self.tasks):
-                max_score_improvement = max(task_score_improvements[task] for task in task_score_improvements if bid_is_greater(task_score_improvements[task], self.winning_bids[self.id][task]))
+            if any(task in task_score_improvements and self._bid_is_greater(task_score_improvements[task], self.winning_bids[self.id][task], self.id, self.winning_agents[self.id][task]) for task in self.tasks):
+                max_score_improvement = max(task_score_improvements[task] for task in task_score_improvements if self._bid_is_greater(task_score_improvements[task], self.winning_bids[self.id][task], self.id, self.winning_agents[self.id][task]))
                 
-                selected_task = [task for task in self.tasks if task in task_score_improvements and task_score_improvements[task] == max_score_improvement][0]
+                selected_task = next(task for task in self.tasks if 
+                    task in task_score_improvements 
+                    and task_score_improvements[task] == max_score_improvement 
+                    # Controlla di nuovo per evitare scelta sbagliata nel caso ci siano task con lo stesso valore ma alcuni già presi da altri
+                    and self._bid_is_greater(task_score_improvements[task], self.winning_bids[self.id][task], self.id, self.winning_agents[self.id][task]))
 
             if selected_task < 0:
                 if self.verbose:
@@ -73,7 +81,7 @@ class BundleAlgorithm:
                 break
 
             if self.verbose:
-                self.log(iter_num, "Selected task {}".format(selected_task))
+                self.log(iter_num, "Selected task {}\tbid is {} > {}".format(selected_task, round(task_score_improvements[selected_task], 3), round(self.winning_bids[self.id][selected_task], 3)))
 
             task_position = 0
             if len(self.task_path) > 0:
@@ -103,8 +111,12 @@ class BundleAlgorithm:
             self.log(iter_num, "Pre conf res state: agents: {} bids: {} bundle: {}".format(self.winning_agents[self.id], self.winning_bids[self.id], self.task_bundle))
 
         if self.verbose:
-            self.log(iter_num, "To update: \n{}".format('\n'.join("\t{}: agents: {} bids: {}".format(other_id, self.winning_agents[other_id], self.winning_bids[other_id]) for other_id in self.changed_ids)))
-            self.log(iter_num, "Message times:\n{}".format('\n'.join("\t{}: {}".format(id, self.message_times[id]) for id in self.changed_ids + [self.id])))
+            self.log(iter_num, "To update: ")
+            for other_id in self.changed_ids:
+                self.log(iter_num, "\t{}: agents: {} bids: {}".format(other_id, self.winning_agents[other_id], self.winning_bids[other_id]))
+            self.log(iter_num, "Message times:")
+            for id in self.changed_ids + [self.id]:
+                self.log(iter_num, "\t{}: {}".format(id, self.message_times[id]))
 
         for other_id in self.changed_ids:
             for task in self.tasks:
@@ -119,7 +131,6 @@ class BundleAlgorithm:
             self.log(iter_num, "Post conf res state: agents: {} bids: {} bundle: {}".format(self.winning_agents[self.id], self.winning_bids[self.id], self.task_bundle))
             self.log(iter_num, "\tMessage times: {}".format(self.message_times[self.id]))
 
-    # TODO: ancora bug (hang, non aggiorna bid nulli) in casi come https://hatebin.com/arosfnghhg
     def update_choice(self, other_id, task, iter_num):
         action_default = "leave"
         # Prima chiave tabella: valori dell'agente vincitore secondo l'altro agente che
@@ -128,10 +139,10 @@ class BundleAlgorithm:
         # Valori: stringa per valore action, o per condizionali lambda id -> stringa
         case_table = {
             other_id: {
-                self.id: lambda id, rec_id: "update" if bid_is_greater(self.winning_bids[id][task], self.winning_bids[self.id][task]) else action_default,
+                self.id: lambda id, rec_id: "update" if self._bid_is_greater(self.winning_bids[id][task], self.winning_bids[self.id][task], id, self.id) else action_default,
                 other_id: "update",
                 "default": lambda id, rec_id: "update" if self.message_times[other_id][id] > self.message_times[self.id][id] or 
-                    bid_is_greater(self.winning_bids[other_id][task], self.winning_bids[self.id][task]) else action_default,
+                    self._bid_is_greater(self.winning_bids[other_id][task], self.winning_bids[self.id][task], other_id, self.id) else action_default,
                 -1: "update",
             },
             self.id: {
@@ -142,13 +153,13 @@ class BundleAlgorithm:
             },
             "default": {
                 self.id: lambda id, rec_id: "update" if self.message_times[other_id][id] > self.message_times[self.id][id] and 
-                    bid_is_greater(self.winning_bids[other_id][task], self.winning_bids[self.id][task]) else action_default,
+                    self._bid_is_greater(self.winning_bids[other_id][task], self.winning_bids[self.id][task], other_id, self.id) else action_default,
                 other_id: lambda id, rec_id: "update" if self.message_times[other_id][id] > self.message_times[self.id][id] else "reset",
                 "this_id": lambda id, rec_id: "update" if self.message_times[other_id][id] > self.message_times[self.id][id] else action_default,
                 "default": lambda id, rec_id:
                     "update" if self.message_times[other_id][id] > self.message_times[self.id][id] and 
                         (self.message_times[other_id][rec_id] > self.message_times[self.id][rec_id] or
-                        bid_is_greater(self.winning_bids[other_id][task], self.winning_bids[self.id][task])) else
+                        self._bid_is_greater(self.winning_bids[other_id][task], self.winning_bids[self.id][task], other_id, self.id)) else
                     ("reset" if self.message_times[other_id][rec_id] > self.message_times[self.id][rec_id] and
                         self.message_times[self.id][id] > self.message_times[other_id][id] else action_default),
                 -1: lambda id, rec_id: "update" if self.message_times[other_id][id] > self.message_times[self.id][id] else action_default,
@@ -307,6 +318,17 @@ class BundleAlgorithm:
     def get_result(self):
         return (self.task_path, self.task_bundle)
 
+    # ~~Ignora bid nulli (valore default) a scopo bid negativi~~
+    # Non più, per permettere task nello stesso luogo: usecase di bid negativi
+    # sono sostituibili con 1 / x
+    # Controllo spareggio con id se possibile
+    def _bid_is_greater(self, bid1, bid2, id1 = -1, id2 = -1):
+        if bid1 == bid2 and id1 >= 0 and id2 >= 0:
+            return id1 > id2
+
+        # return not bid1 == 0 and (bid2 == 0 or bid1 > bid2)
+        return bid1 > bid2
+
     def _ignores_task(self, task):
         return False
 
@@ -361,10 +383,3 @@ def find_max_index(lst):
 
     max_val = max(lst)
     return [idx for idx in range(len(lst)) if lst[idx] == max_val]
-
-# ~~Ignora bid nulli (valore default) a scopo bid negativi~~
-# Non più, per permettere task nello stesso luogo: usecase di bid negativi
-# sono sostituibili con 1 / x
-def bid_is_greater(bid1, bid2):
-    # return not bid1 == 0 and (bid2 == 0 or bid1 > bid2)
-    return bid1 > bid2

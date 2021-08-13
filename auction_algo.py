@@ -1,9 +1,13 @@
+from os import error
 import numpy as np
 from disropt.agents import Agent
 import sys
 
 class AuctionAlgorithm:
     def __init__(self, id, bids, agent: Agent, tasks, agent_ids, verbose = False):
+        if any(filter(lambda bid: bid < 0, bids)):
+            raise ValueError("Tried to start CBAA with negative bids. They are not supported, if you need to find a minimum instead of a maximum you can usually use 1/x, 0.y^x or similar to convert the bids.")
+
         self.id = id
         self.bids = bids
         self.agent = agent
@@ -11,7 +15,9 @@ class AuctionAlgorithm:
         self.agent_ids = agent_ids
         self.verbose = verbose
 
-        print("Init with data: \n\tid: {}\n\tbids: {}\n\ttasks: {}\n\tagents: {}\n\tneighbors: {}".format(self.id, self.bids, self.tasks, self.agent_ids, self.agent.in_neighbors))
+        if self.verbose:
+            print("Init with data: \n\tid: {}\n\tbids: {}\n\ttasks: {}\n\tagents: {}\n\tneighbors: {}"
+                .format(self.id, self.bids, self.tasks, self.agent_ids, self.agent.in_neighbors if self.agent != None else []))
 
         self.done = False
         self.assigned_tasks = np.zeros(len(self.tasks))
@@ -28,11 +34,9 @@ class AuctionAlgorithm:
         # Sommatoria della riga corrispondente all'agente i
         if (sum(self.assigned_tasks) == 0):
             # Task ottenibili solo quelli dove il bid è maggiore del massimo pre-esistente,
-            # ignorando bid nulli quindi non ancora assegnati (se altrui)
-            # oppure non interessati (se propri)
-            # Tutto questo per gestire bid negativi (per trovare il minimo)
+            # ignorando bid non interessati
             valid_tasks = list(
-                filter(lambda task: (self.bids[task] >= self.max_bids[self.id][task] or self.max_bids[self.id][task] == 0) and self.bids[task] != 0, 
+                filter(lambda task: self._bid_is_greater(self.bids[task], self.max_bids[self.id][task]) and not self._ignores_task(task), 
                 self.tasks))
 
             # print(self.id, self, valid_tasks)
@@ -50,30 +54,39 @@ class AuctionAlgorithm:
     def converge_phase(self, iter_num="."):
         # Aggiorna la propria lista dei bid massimi in base a quelli ricevuti dagli altri
         # agenti, in modo tale da avere l'effettivo bid globalmente massimo per ogni task
-        # Come sopra in auction_phase, ignora bid nulli in quanto non ancora assegnati
-        # (altrimenti in caso di bid negativi per trovare il minimo sarebbero sempre il massimo)
-        new_max_bids = [0 for task in self.tasks]
-        for task in self.tasks:
-            task_bids = []
-            for agent_id in self.agent_ids:
-                if self.max_bids[agent_id][task] != 0:
-                    task_bids.append(self.max_bids[agent_id][task])
-            if len(task_bids) > 0:
-                new_max_bids[task] = max(task_bids)
-
-        self.max_bids[self.id] = new_max_bids
-
+        # La lista viene temporaneamente salvata in variabile a parte per permettere di capire da chi provengano
+        # eventuali cambiamenti durante questa fase, e il campo della classe è aggiornato solo alla fine
+        new_max_bids = np.array([max(self.max_bids[other_id][task] for other_id in self.agent_ids) for task in self.tasks])
+        temp_max_bids_table = np.concatenate((self.max_bids[:self.id], [new_max_bids], self.max_bids[self.id + 1:]))
+        
         # Se il proprio bid per il task selezionato non è quello più alto,
         # allora lascia il task selezionato all'agente che ha posto il bid
         # più alto, ne verrà cercato un'altro all'iterazione successiva
         if self.selected_task >= 0:
-            max_bid_for_selected_task = max(self.max_bids[agent_id][self.selected_task] for agent_id in self.agent_ids if self.max_bids[agent_id][self.selected_task] != 0)
-            if max_bid_for_selected_task > self.bids[self.selected_task]:
+            max_bid_for_selected_task = max(temp_max_bids_table[agent_id][self.selected_task] for agent_id in self.agent_ids)
+            max_bid_agent = -1
+            try:
+                # Usato per spareggio. NOTA: non rappresenta da quale agente provenga effettivamente
+                # il bid massimo, quale agente tra i vicini abbia inviato i dati che contenevano quell'informazione.
+                # Si può usare comunque per lo spareggio, che è di fatto arbitrario e solo necessario a evitare
+                # loop infiniti in caso di bid uguali.
+                max_bid_agent = next(agent_id for agent_id in self.agent_ids if self.max_bids[agent_id][self.selected_task] == max_bid_for_selected_task)
+            except StopIteration:
+                # Servirebbe solo per spareggio, non è necessariamente errore catastrofico (anche se ha brutte implicazioni, quindi log)
+                print("{} | {}: #######".format(self.id, iter_num))
+                print("{} | {}: WARNING: Couldn't find max_bid_agent, relevant data:".format(self.id, iter_num))
+                print("{} | {}: selected_task={}\tmax_bid_for_selected_task={}".format(self.id, iter_num, self.selected_task, max_bid_for_selected_task))
+                print("{} | {}: selected task bids={}".format(self.id, iter_num, [self.max_bids[agent_id][self.selected_task] for agent_id in self.agent_ids]))
+                print("{} | {}: #######".format(self.id, iter_num))
+
+            if self._bid_is_greater(max_bid_for_selected_task, self.bids[self.selected_task], max_bid_agent, self.id):
                 if self.verbose:
                     print("{} | {}: Higher bid exists as {}, removing...".format(self.id, iter_num, max_bid_for_selected_task) )
                 self.assigned_tasks[self.selected_task] = 0
                 self.selected_task = -1
-        #lprint("- - - - - - - -")
+    
+        self.max_bids[self.id] = new_max_bids
+
 
     def check_done(self, iter_num="."):
         # Controlla terminazione: se la lista max_bids è rimasta
@@ -90,9 +103,9 @@ class AuctionAlgorithm:
 
         # Numero di iterazioni senza alterazioni nello stato rilevante per considerare l'operazione finita
         num_stable_runs = 2 * len(self.agent_ids) + 1
-        # Se tutti i bid massimi sono stati ricevuti, ignorando quelli per i task che questo agente
-        # sta ignorando (vale a dire quelle per cui ha messo bid 0)
-        all_max_bids_set = np.all(np.logical_or(self.max_bids[self.id] != 0, self.bids == 0))
+        # Se tutti i bid massimi sono stati ricevuti, ignorando quelli per i task 
+        # che questo agente sta ignorando
+        all_max_bids_set = all(self.max_bids[self.id][task] != 0 for task in self.tasks if not self._ignores_task(task))
         return all_max_bids_set and np.sum(self.assigned_tasks) == 1 and self.selected_task >= 0 and self.max_bids_equal_cnt >= num_stable_runs
 
     def run_iter(self, iter_num = "."):
@@ -136,6 +149,16 @@ class AuctionAlgorithm:
 
     def get_result(self):
         return (self.selected_task, self.assigned_tasks)
+
+    # Spareggio in base a id se possibile
+    def _bid_is_greater(self, bid1, bid2, id1 = -1, id2 = -1):
+        if bid1 == bid2 and id1 >= 0 and id2 >= 0:
+            return id1 > id2
+        # return not bid1 == 0 and (bid2 == 0 or bid1 > bid2)
+        return bid1 > bid2
+
+    def _ignores_task(self, task):
+        return False
 
     def __repr__(self):
         return str(self.__dict__)

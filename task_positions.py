@@ -1,4 +1,6 @@
 import csv
+from random import shuffle
+from disropt.agents import agent
 import numpy as np
 import argparse
 
@@ -25,11 +27,44 @@ def write_positions(agent_positions: list, task_positions: list, agent_pos_path:
             writer.writerow(task_positions[i])
             print("{}: [{}]".format(i, ' '.join(str(x) for x in task_positions[i])))
 
-def generate_positions(num_agents: int, num_tasks: int):
+def generate_positions(num_agents: int, num_tasks: int, 
+        test_same_positions: bool = False, 
+        avoid_same_positions: bool = False, 
+        test_same_distance: bool = False,
+        test_tasks_same_distance: bool = False,
+        ):
     plane_size = 40
 
-    agent_positions = np.random.randint(-plane_size / 2, plane_size / 2, (num_agents, 2))
-    task_positions = np.random.randint(-plane_size / 2, plane_size / 2, (num_tasks, 2))
+    agent_positions = []
+    task_positions = []
+
+    if not avoid_same_positions:
+        agent_positions = np.random.randint(-plane_size / 2, plane_size / 2, (num_agents, 2))
+        task_positions = np.random.randint(-plane_size / 2, plane_size / 2, (num_tasks, 2))
+    else:
+        # Don't make the plane too big if you don't want this to weigh on RAM
+        positions = [(x, y) for x in range(plane_size) for y in range(plane_size)]
+        shuffle(positions)
+        for i in range(num_agents):
+            agent_positions.append(positions.pop())
+        for i in range(num_tasks):
+            task_positions.append(positions.pop())
+        agent_positions = np.array(agent_positions)
+        task_positions = np.array(task_positions)
+
+    if test_tasks_same_distance:
+        task_positions[-1] = -task_positions[0] + agent_positions[0] * 2
+
+    if test_same_positions:
+        # Test agenti con stessa posizione iniziale
+        agent_positions[-1] = agent_positions[0]
+        #Test task con stessa posizione iniziale
+        task_positions[-1] = task_positions[0]
+
+    if test_same_distance:
+        # Rifletti agente -2 intorno a task 0 partendo da agente 0 così da avere la stessa distanza
+        agent_positions[-2] = -agent_positions[0] + task_positions[0] * 2
+
     return (agent_positions, task_positions)
 
 def load_positions(agent_pos_path, task_pos_path):
@@ -48,6 +83,26 @@ def load_positions(agent_pos_path, task_pos_path):
     agent_positions = np.array(agent_positions)
 
     return (task_positions, agent_positions)
+
+def linear_dist(pos1, pos2):
+    return np.sqrt(np.sum((pos1 - pos2) ** 2))
+
+def gen_distance_calc_time_fun(agent_positions, task_positions):
+    def calc_time_fun(agent_id, task, path: list) -> float:
+        if task in path:
+            task_id = path.index(task)
+            out = 0
+
+            for i in range(task_id + 1):
+                if i == 0:
+                    out += linear_dist(agent_positions[agent_id], task_positions[path[i]])
+                else:
+                    out += linear_dist(task_positions[path[i - 1]], task_positions[path[i]])
+
+            return out
+        else:
+            raise ValueError("Task not present in specified path!")
+    return calc_time_fun
 
 if __name__ == '__main__':
     args = parser.parse_args()
