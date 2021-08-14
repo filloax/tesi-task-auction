@@ -19,151 +19,181 @@ parser.add_argument('-v', '--verbose', default=False, action='store_true')
 parser.add_argument('--test-mode', default=False, action='store_true')
 parser.add_argument('--test-runs', default=1, type=int)
 
-done_agents = 0
+class TesterCBBA:
+    def __init__(self):
+        # Non impostati nel costruttore, pensato per poter essere usato più volte con
+        # dati diversi; servono principalmente a ottenerli dall'esterno nel multithreading
+        self.done_agents = 0
+        self.iterations = 0
+        self.const_winning_bids = []
+        self.log_file = ''
 
-def get_done_agents():
-    return done_agents
+    def get_done_status(self):
+        return (self.done_agents, self.iterations, self.const_winning_bids)
 
-def run(num_agents, num_tasks, max_agent_tasks, verbose = False, test_mode = False, run = 0, agent_positions = None, task_positions = None, silent = False, return_iterations = False):
-    agent_ids = list(range(num_agents))
-    tasks = list(range(num_tasks))
-    # Analogo a
-    # [0, 1, 0, 0, 0],
-    # [1, 0, 1, 0, 0],
-    # [0, 1, 0, 1, 0],
-    # [0, 0, 1, 0, 1],
-    # [0, 0, 0, 1, 0]
-    links = np.roll(np.pad(np.eye(num_agents), 1), 1, 0)[1:-1,1:-1] + np.roll(np.pad(np.eye(num_agents), 1), -1, 0)[1:-1,1:-1]
+    def run(self, num_agents, num_tasks = -1, max_agent_tasks = 1, verbose = False, test_mode = False, run = 0, agent_positions = None, task_positions = None, 
+    silent = False, return_iterations = False, log_file=''):
+        if num_tasks < 0:
+            num_tasks = num_agents
+            
+        self.log_file = log_file
 
-    links = links + np.eye(num_agents) # Commentare per mettere g_ii = 0
-    
-    # Diverso da CBAA: simula il caso specifico delle posizioni per dare un senso
-    # alla generazione di un percorso, quindi non si limita a semplici bid casuali
-    
-    if agent_positions is None or task_positions is None:
-        (agent_positions, task_positions) = generate_positions(num_agents, num_tasks)
-        write_positions(agent_positions, task_positions)
+        agent_ids = list(range(num_agents))
+        tasks = list(range(num_tasks))
+        # Analogo a
+        # [0, 1, 0, 0, 0],
+        # [1, 0, 1, 0, 0],
+        # [0, 1, 0, 1, 0],
+        # [0, 0, 1, 0, 1],
+        # [0, 0, 0, 1, 0]
+        links = np.roll(np.pad(np.eye(num_agents), 1), 1, 0)[1:-1,1:-1] + np.roll(np.pad(np.eye(num_agents), 1), -1, 0)[1:-1,1:-1]
 
-    # Inizializza dati degli agenti
-    agents = [BundleAlgorithm(id, None, TimeScoreFunction(id, [0.9 for task in tasks], gen_distance_calc_time_fun(agent_positions, task_positions)), tasks, max_agent_tasks, agent_ids, verbose) for id in agent_ids]
+        links = links + np.eye(num_agents) # Commentare per mettere g_ii = 0
+        
+        # Diverso da CBAA: simula il caso specifico delle posizioni per dare un senso
+        # alla generazione di un percorso, quindi non si limita a semplici bid casuali
+        
+        if agent_positions is None or task_positions is None:
+            (agent_positions, task_positions) = generate_positions(num_agents, num_tasks)
+            write_positions(agent_positions, task_positions)
 
-    i = 0
-    force_print = False
+        # Inizializza dati degli agenti
+        agents = [BundleAlgorithm(id, 
+            agent = None, 
+            score_function = TimeScoreFunction(id, [0.9 for task in tasks], gen_distance_calc_time_fun(agent_positions, task_positions)), 
+            tasks = tasks, 
+            max_agent_tasks = max_agent_tasks, 
+            agent_ids = agent_ids, 
+            verbose = verbose,
+            log_file = log_file,
+            ) for id in agent_ids]
 
-    try:
-        global done_agents
-        done_agents = 0
+        self.iterations = 0
+        self.const_winning_bids = [0 for agent in agents]
+        force_print = False
 
-        start_time = time.time()
-        while done_agents < num_agents:
-            i = i + 1
+        try:
+            self.done_agents = 0
 
-            order = list(range(num_agents))
-            random.shuffle(order)
+            start_time = time.time()
+            while self.done_agents < num_agents:
+                self.iterations = self.iterations + 1
 
-            for id in order:
-                agents[id].construct_phase(i)
+                order = list(range(num_agents))
+                random.shuffle(order)
 
-                agents[id].changed_ids = []
-                # ricevi dati da altri agenti (invio è passivo)
-                for other_id in agent_ids:
-                    if (i > 1 or order.index(other_id) < order.index(id)) and other_id != id and links[id][other_id] == 1:
-                        # time.sleep(random.random() * 0.01) # simula invio dati a momenti diversi
-                        rec_time = time.time() - start_time
-                        agents[id].winning_agents[other_id] = agents[other_id].winning_agents[other_id]
-                        agents[id].winning_bids[other_id] = agents[other_id].winning_bids[other_id]
-                        agents[id].message_times[other_id] = agents[other_id].message_times[other_id]
-                        agents[id].changed_ids.append(other_id)
-                        agents[id].message_times[id][other_id] = rec_time
+                for id in order:
+                    agents[id].construct_phase(self.iterations)
 
-            random.shuffle(order)
-            for id in order:
-                agents[id].conflict_resolve_phase(i)
-                
-                if agents[id].check_done(i):
-                    done_agents += 1
+                    agents[id].changed_ids = []
+                    # ricevi dati da altri agenti (invio è passivo)
+                    for other_id in agent_ids:
+                        if (self.iterations > 1 or order.index(other_id) < order.index(id)) and other_id != id and links[id][other_id] == 1:
+                            # time.sleep(random.random() * 0.01) # simula invio dati a momenti diversi
+                            rec_time = time.time() - start_time
+                            agents[id].winning_agents[other_id] = agents[other_id].winning_agents[other_id]
+                            agents[id].winning_bids[other_id] = agents[other_id].winning_bids[other_id]
+                            agents[id].message_times[other_id] = agents[other_id].message_times[other_id]
+                            agents[id].changed_ids.append(other_id)
+                            agents[id].message_times[id][other_id] = rec_time
 
-            if verbose:
-                print("Iter", i)
-                print(np.array([agent.winning_bids[agent.id] for agent in agents]))
-                print("-------------------")
-                print("Winning agents:")
-                print(np.array([agent.winning_agents[agent.id] for agent in agents]))
-                print("-------------------")
-                print("Task paths:")
-                print("\n".join(["{}: {}".format(agent.id, agent.task_path) for agent in agents]))
-                print("-------------------")
-                print("Assigned tasks:")
-                print(np.array([agent.assigned_tasks for agent in agents]))
-                print("###################")
+                random.shuffle(order)
+                for id in order:
+                    agents[id].conflict_resolve_phase(self.iterations)
+                    
+                    if agents[id].check_done(self.iterations):
+                        self.done_agents += 1
 
-            # time.sleep(0.5)
-            # input()
+                    self.const_winning_bids[id] = agents[id].win_bids_equal_cnt
 
-    except KeyboardInterrupt or BrokenPipeError:
-        print("CBBA: Keyboard interrupt, early end...")
-        print("CBBA: Keyboard interrupt, early end...", file=sys.stderr)
-        force_print = True
-    finally:
-        if not test_mode and (force_print or not silent):
-            print("\n\nFinal version after", i, "iterations:")
-            print("###################")
-            print("Starting from:")
-            print("Agent positions: \n{}".format({ id: agent_positions[id] for id in agent_ids }))
-            print("Task positions: \n{}".format({ id: task_positions[id] for id in tasks }))
-            print("###################")
-            print(np.array([agent.winning_bids[agent.id] for agent in agents]))
-            print("-------------------")
-            print("Winning agents:")
-            print(np.array([agent.winning_agents[agent.id] for agent in agents]))
-            print("-------------------")
-            print("Task paths:")
-            print("\n".join(["{}: {}".format(agent.id, agent.task_path) for agent in agents]))
-            print("-------------------")
-            print("Assigned tasks:")
-            print(np.array([agent.assigned_tasks for agent in agents]))
-            print("###################")
+                self.log("Iter", self.iterations, do_console=verbose)
+                self.log(np.array([agent.winning_bids[agent.id] for agent in agents]), do_console=verbose)
+                self.log("-------------------", do_console=verbose)
+                self.log("Winning agents:", do_console=verbose)
+                self.log(np.array([agent.winning_agents[agent.id] for agent in agents]), do_console=verbose)
+                self.log("-------------------", do_console=verbose)
+                self.log("Task paths:", do_console=verbose)
+                self.log("\n".join(["{}: {}".format(agent.id, agent.task_path) for agent in agents]), do_console=verbose)
+                self.log("-------------------", do_console=verbose)
+                self.log("Assigned tasks:", do_console=verbose)
+                self.log(np.array([agent.assigned_tasks for agent in agents]), do_console=verbose)
+                self.log("###################", do_console=verbose)
 
-    sol = np.array([agent.assigned_tasks for agent in agents])
+                # time.sleep(0.5)
+                # input()
 
-    if test_mode:
-        x = Variable(num_agents * num_tasks)
+        except KeyboardInterrupt or BrokenPipeError:
+            self.log("CBBA: Keyboard interrupt, early end...")
+            self.log("CBBA: Keyboard interrupt, early end...", file=sys.stderr)
+            force_print = True
+        finally:
+            if not test_mode and (force_print or not silent):
+                self.log("\n\nFinal version after", self.iterations, "iterations:")
+                self.log("###################")
+                self.log("Starting from:")
+                self.log("Agent positions: \n{}".format({ id: agent_positions[id] for id in agent_ids }))
+                self.log("Task positions: \n{}".format({ id: task_positions[id] for id in tasks }))
+                self.log("###################")
+                self.log(np.array([agent.winning_bids[agent.id] for agent in agents]))
+                self.log("-------------------")
+                self.log("Winning agents:")
+                self.log(np.array([agent.winning_agents[agent.id] for agent in agents]))
+                self.log("-------------------")
+                self.log("Task paths:")
+                self.log("\n".join(["{}: {}".format(agent.id, agent.task_path) for agent in agents]))
+                self.log("-------------------")
+                self.log("Assigned tasks:")
+                self.log(np.array([agent.assigned_tasks for agent in agents]))
+                self.log("###################")
 
-        #TODO
-        c = np.ones((num_agents, num_tasks))
+        sol = np.array([agent.assigned_tasks for agent in agents])
 
-        # I bid rappresentano la funzione di costo del problema di ottimizzazione
-        # NEGATO visto che nel nostro caso bisogna massimizzare i valori, mentre
-        # Problem di Disropt trova i minimi
-        bids_line = - np.reshape(c, (num_agents * num_tasks, 1))
+        if test_mode:
+            x = Variable(num_agents * num_tasks)
 
-        # print("Bids line:", bids_line)
+            #TODO
+            c = np.ones((num_agents, num_tasks))
 
-        obj_function = bids_line @ x
+            # iterations bid rappresentano la funzione di costo del problema di ottimizzazione
+            # NEGATO visto che nel nostro caso bisogna massimizzare iterations valori, mentre
+            # Problem di Disropt trova iterations minimi
+            bids_line = - np.reshape(c, (num_agents * num_tasks, 1))
 
-        # I vincoli sono descritti nell'articolo di fonte
-        sel_tasks = matlib.repmat(np.eye(num_tasks), 1, num_agents)
-        sel_agents = np.array([ np.roll([1] * num_tasks + [0] * num_tasks * (num_agents - 1), y * num_tasks) for y in range(num_agents) ])
+            # print("Bids line:", bids_line)
 
-        constraints = [
-            # Non assegnati più agent allo stesso task
-            sel_tasks.T @ x <= np.ones((num_tasks, 1)), 
-            # Non assegnati più di max_agent_tasks task allo stesso agent
-            sel_agents.T @ x <= np.ones((num_agents, 1)) * max_agent_tasks, 
-            # Non assegnati più o meno task del possibile in totale
-            np.ones((num_agents * num_agents, 1)) @ x == num_agents,
-            # X appartiene a 0 o 1
-            x >= np.zeros((num_agents * num_agents, 1)),
-            x <= np.ones((num_agents * num_agents, 1)),
-        ]
+            obj_function = bids_line @ x
 
-        problem = Problem(obj_function, constraints)
-        check_sol_line = problem.solve()
+            # iterations vincoli sono descritti nell'articolo di fonte
+            sel_tasks = matlib.repmat(np.eye(num_tasks), 1, num_agents)
+            sel_agents = np.array([ np.roll([1] * num_tasks + [0] * num_tasks * (num_agents - 1), y * num_tasks) for y in range(num_agents) ])
 
-    if return_iterations:
-        return (sol, i)
-    else:
-        return sol
+            constraints = [
+                # Non assegnati più agent allo stesso task
+                sel_tasks.T @ x <= np.ones((num_tasks, 1)), 
+                # Non assegnati più di max_agent_tasks task allo stesso agent
+                sel_agents.T @ x <= np.ones((num_agents, 1)) * max_agent_tasks, 
+                # Non assegnati più o meno task del possibile in totale
+                np.ones((num_agents * num_agents, 1)) @ x == num_agents,
+                # X appartiene a 0 o 1
+                x >= np.zeros((num_agents * num_agents, 1)),
+                x <= np.ones((num_agents * num_agents, 1)),
+            ]
+
+            problem = Problem(obj_function, constraints)
+            check_sol_line = problem.solve()
+
+        if return_iterations:
+            return (sol, self.iterations)
+        else:
+            return sol
+
+    def log(self, *values, do_console=True):
+        if do_console:
+            print(*values)
+        if self.log_file != '':
+            with open(self.log_file, 'a') as f:
+                print(*values, file=f)
+
 
 if __name__ == "__main__":
     args = parser.parse_args()
@@ -182,8 +212,9 @@ if __name__ == "__main__":
     times = []
 
     for run_num in range(runs):
+        tester = TesterCBBA()
         pre_time = time.time()
-        ret = run(num_agents, num_tasks, max_agent_tasks, verbose, test_mode, run_num)
+        ret = tester.run(num_agents, num_tasks, max_agent_tasks, verbose, test_mode, run_num)
         times.append(time.time() - pre_time)
         results.append(ret)
 

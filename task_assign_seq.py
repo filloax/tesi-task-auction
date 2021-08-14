@@ -15,154 +15,180 @@ parser.add_argument('-v', '--verbose', default=False, action='store_true')
 parser.add_argument('--test-mode', default=False, action='store_true')
 parser.add_argument('--test-runs', default=1, type=int)
 
-done_agents = 0
+class TesterCBAA:
 
-def get_done_agents():
-    return done_agents
+    def __init__(self):
+        self.done_agents = 0
+        self.iterations = 0
+        self.const_winning_bids = []
+        self.log_file = ''
 
-def run(num_agents, verbose = False, test_mode = False, run = 0, agent_positions = None, task_positions = None, silent = False, return_iterations = False):
-    num_tasks = num_agents
+    def get_done_status(self):
+        return (self.done_agents, self.iterations, self.const_winning_bids)
 
-    agent_ids = list(range(num_agents))
-    tasks = list(range(num_tasks)) # J rappresentato con range(num_agents), 0..4 invece di 1..5
-    # Analogo a
-    # [0, 1, 0, 0, 0],
-    # [1, 0, 1, 0, 0],
-    # [0, 1, 0, 1, 0],
-    # [0, 0, 1, 0, 1],
-    # [0, 0, 0, 1, 0]
-    links = np.roll(np.pad(np.eye(num_agents), 1), 1, 0)[1:-1,1:-1] + np.roll(np.pad(np.eye(num_agents), 1), -1, 0)[1:-1,1:-1]
-    links = links + np.eye(num_agents) # Commentare per mettere g_ii = 0
+    def run(self, num_agents, verbose = False, test_mode = False, run = 0, agent_positions = None, task_positions = None, 
+    silent = False, return_iterations = False, log_file=''):
+        num_tasks = num_agents
+
+        self.log_file = log_file
+
+        agent_ids = list(range(num_agents))
+        tasks = list(range(num_tasks)) # J rappresentato con range(num_agents), 0..4 invece di 1..5
+        # Analogo a
+        # [0, 1, 0, 0, 0],
+        # [1, 0, 1, 0, 0],
+        # [0, 1, 0, 1, 0],
+        # [0, 0, 1, 0, 1],
+        # [0, 0, 0, 1, 0]
+        links = np.roll(np.pad(np.eye(num_agents), 1), 1, 0)[1:-1,1:-1] + np.roll(np.pad(np.eye(num_agents), 1), -1, 0)[1:-1,1:-1]
+        links = links + np.eye(num_agents) # Commentare per mettere g_ii = 0
 
 
-    if agent_positions is None or task_positions is None:
-        (agent_positions, task_positions) = generate_positions(num_agents, num_tasks)
-        write_positions(agent_positions, task_positions)
+        if agent_positions is None or task_positions is None:
+            (agent_positions, task_positions) = generate_positions(num_agents, num_tasks)
+            write_positions(agent_positions, task_positions)
 
-    bids = np.array([[linear_dist(agent_positions[agent], task_positions[task]) for task in tasks] for agent in agent_ids])
+        bids = np.array([[linear_dist(agent_positions[agent], task_positions[task]) for task in tasks] for agent in agent_ids])
 
-    # Inizializza dati degli agenti
-    agents = [AuctionAlgorithm(id, bids[id], None, tasks, agent_ids, verbose) for id in agent_ids]
+        # Inizializza dati degli agenti
+        agents = [AuctionAlgorithm(id, bids[id], None, tasks, agent_ids, verbose) for id in agent_ids]
+        agents = [AuctionAlgorithm(id, 
+            bids = bids[id],
+            agent = None, 
+            tasks = tasks, 
+            agent_ids = agent_ids, 
+            verbose = verbose,
+            log_file = log_file,
+            ) for id in agent_ids]
 
-    i = 0
-    force_print = False
+        self.iterations = 0
+        self.const_winning_bids = [0 for agent in agents]
+        force_print = False
 
-    try:
-        global done_agents
-        done_agents = 0
+        try:
+            self.done_agents = 0
 
-        while done_agents < num_agents:
-            i = i + 1
+            while self.done_agents < num_agents:
+                self.iterations = self.iterations + 1
 
-            order = list(range(num_agents))
-            random.shuffle(order)
+                order = list(range(num_agents))
+                random.shuffle(order)
 
-            for id in order:
-                agents[id].auction_phase()
+                for id in order:
+                    agents[id].auction_phase()
 
-                # ricevi dati da altri agenti (invio è passivo)
-                for otherAgent in agent_ids:
-                    if (i > 1 or order.index(otherAgent) < order.index(id)) and otherAgent != id and links[id][otherAgent] == 1:
-                        agents[id].max_bids[otherAgent] = agents[otherAgent].max_bids[otherAgent]
+                    # ricevi dati da altri agenti (invio è passivo)
+                    for otherAgent in agent_ids:
+                        if (self.iterations > 1 or order.index(otherAgent) < order.index(id)) and otherAgent != id and links[id][otherAgent] == 1:
+                            agents[id].max_bids[otherAgent] = agents[otherAgent].max_bids[otherAgent]
 
-            random.shuffle(order)
-            for id in order:
-                agents[id].converge_phase()
-                
-                if agents[id].check_done():
-                    done_agents += 1
+                random.shuffle(order)
+                for id in order:
+                    agents[id].converge_phase()
+                    
+                    if agents[id].check_done():
+                        self.done_agents += 1
 
-            if verbose:
-                print("Iter", i)
-                print("Max bids:")
-                print(np.array([agent.max_bids[agent.id] for agent in agents]))
-                print("-------------------")
-                print("Assigned tasks:")
-                print(np.array([agent.assigned_tasks for agent in agents]))
-                print("-------------------")
-                print("Bids:")
-                print(np.array([agent.bids for agent in agents]))
-                print("###################")
+                    self.const_winning_bids[id] = agents[id].max_bids_equal_cnt
 
-            # time.sleep(0s.05)
-            # input()
+                self.log("Iter", self.iterations, do_console=verbose)
+                self.log("Max bids:", do_console=verbose)
+                self.log(np.array([agent.max_bids[agent.id] for agent in agents]), do_console=verbose)
+                self.log("-------------------", do_console=verbose)
+                self.log("Assigned tasks:", do_console=verbose)
+                self.log(np.array([agent.assigned_tasks for agent in agents]), do_console=verbose)
+                self.log("-------------------", do_console=verbose)
+                self.log("Bids:", do_console=verbose)
+                self.log(np.array([agent.bids for agent in agents]), do_console=verbose)
+                self.log("###################", do_console=verbose)
 
-    except KeyboardInterrupt or BrokenPipeError:
-        print("CBAA: Keyboard interrupt, early end...")
-        print("CBAA: Keyboard interrupt, early end...", file=sys.stderr)
-        force_print = True
-    finally:
+                # time.sleep(0s.05)
+                # input()
+
+        except KeyboardInterrupt or BrokenPipeError:
+            self.log("CBAA: Keyboard interrupt, early end...")
+            self.log("CBAA: Keyboard interrupt, early end...", file=sys.stderr)
+            force_print = True
+        finally:
+            if not test_mode and (force_print or not silent):
+                self.log("Final version after", self.iterations, "self.iterations:")
+                self.log("Assigned tasks:")
+                self.log(np.array([agent.assigned_tasks for agent in agents]))
+                self.log("-------------------")
+                self.log("Max bids [0]:")
+                self.log(np.array([agent.max_bids[agent.id] for agent in agents]))
+                self.log("-------------------")
+                self.log("Bids:")
+                self.log(np.array([agent.bids for agent in agents]))
+                self.log("###################")
+
+        sol = np.array([agent.assigned_tasks for agent in agents])
+
         if not test_mode and (force_print or not silent):
-            print("Final version after", i, "iterations:")
-            print("Assigned tasks:")
-            print(np.array([agent.assigned_tasks for agent in agents]))
-            print("-------------------")
-            print("Max bids [0]:")
-            print(np.array([agent.max_bids[agent.id] for agent in agents]))
-            print("-------------------")
-            print("Bids:")
-            print(np.array([agent.bids for agent in agents]))
-            print("###################")
+            self.log("\nDouble-check with Disropt optimization:")
+        
+        x = Variable(num_agents * num_agents)
 
-    sol = np.array([agent.assigned_tasks for agent in agents])
+        # self.iterations bid rappresentano la funzione di costo del problema di ottimizzazione
+        # NEGATO visto che nel nostro caso bisogna massimizzare self.iterations valori, mentre
+        # Problem di Disropt trova self.iterations minimi
+        bids_line = -np.reshape(bids, (num_agents * num_agents, 1))
 
-    if not test_mode and (force_print or not silent):
-        print("\nDouble-check with Disropt optimization:")
-    
-    x = Variable(num_agents * num_agents)
+        # self.log("Bids line:", bids_line)
 
-    # I bid rappresentano la funzione di costo del problema di ottimizzazione
-    # NEGATO visto che nel nostro caso bisogna massimizzare i valori, mentre
-    # Problem di Disropt trova i minimi
-    bids_line = -np.reshape(bids, (num_agents * num_agents, 1))
+        obj_function = bids_line @ x
 
-    # print("Bids line:", bids_line)
+        # self.iterations vincoli sono descritti nell'articolo di fonte
+        sel_tasks = matlib.repmat(np.eye(num_agents), 1, num_agents)
+        sel_agents = np.array([ np.roll([1] * num_agents + [0] * num_agents * (num_agents - 1), y * num_agents) for y in range(num_agents)])
 
-    obj_function = bids_line @ x
+        constraints = [
+            # Non assegnati più agent allo stesso task
+            sel_tasks.T @ x <= np.ones((num_tasks, 1)), 
+            # Non assegnati più di max_agent_tasks task allo stesso agent
+            sel_agents.T @ x <= np.ones((num_agents, 1)), 
+            # Non assegnati più o meno task del possibile in totale
+            np.ones((num_agents * num_agents, 1)) @ x == num_agents,
+            # X appartiene a 0 o 1
+            x >= np.zeros((num_agents * num_agents, 1)),
+            x <= np.ones((num_agents * num_agents, 1)),
+        ]
 
-    # I vincoli sono descritti nell'articolo di fonte
-    sel_tasks = matlib.repmat(np.eye(num_agents), 1, num_agents)
-    sel_agents = np.array([ np.roll([1] * num_agents + [0] * num_agents * (num_agents - 1), y * num_agents) for y in range(num_agents)])
+        problem = Problem(obj_function, constraints)
+        check_sol_line = problem.solve()
+        check_sol = np.reshape(check_sol_line, (num_agents, num_agents))
+        if not test_mode and not silent:
+            self.log("Check solution:\n", check_sol)
+            self.log("Own solution:\n", sol)
 
-    constraints = [
-        # Non assegnati più agent allo stesso task
-        sel_tasks.T @ x <= np.ones((num_tasks, 1)), 
-        # Non assegnati più di max_agent_tasks task allo stesso agent
-        sel_agents.T @ x <= np.ones((num_agents, 1)), 
-        # Non assegnati più o meno task del possibile in totale
-        np.ones((num_agents * num_agents, 1)) @ x == num_agents,
-        # X appartiene a 0 o 1
-        x >= np.zeros((num_agents * num_agents, 1)),
-        x <= np.ones((num_agents * num_agents, 1)),
-    ]
+            self.log("c * x (disropt):", -bids_line.T @ check_sol_line)
+            self.log("c * x (own):", -bids_line.T @ np.reshape(sol, (num_agents * num_agents, 1)))
 
-    problem = Problem(obj_function, constraints)
-    check_sol_line = problem.solve()
-    check_sol = np.reshape(check_sol_line, (num_agents, num_agents))
-    if not test_mode and not silent:
-        print("Check solution:\n", check_sol)
-        print("Own solution:\n", sol)
+            self.log("")
 
-        print("c * x (disropt):", -bids_line.T @ check_sol_line)
-        print("c * x (own):", -bids_line.T @ np.reshape(sol, (num_agents * num_agents, 1)))
+            # self.log("Selected:", np.nonzero(sol_mat)[1])
 
-        print("")
+            self.log("#############################\n")
 
-        # print("Selected:", np.nonzero(sol_mat)[1])
+        cx_dis = float(-bids_line.T @ check_sol_line)
+        cx_own = float(-bids_line.T @ np.reshape(sol, (num_agents * num_agents, 1)))
 
-        print("#############################\n")
+        if test_mode:
+            self.log("{},{},{},{},{}".format(run, cx_dis, cx_own, cx_dis - cx_own, round(100 * (cx_dis - cx_own) / cx_dis, 2)))
 
-    cx_dis = float(-bids_line.T @ check_sol_line)
-    cx_own = float(-bids_line.T @ np.reshape(sol, (num_agents * num_agents, 1)))
+            return [run, cx_dis, cx_own, cx_dis - cx_own, round(100 * (cx_dis - cx_own) / cx_dis, 2)]
+        elif return_iterations:
+            return (sol, self.iterations)
+        else:
+            return sol
 
-    if test_mode:
-        print("{},{},{},{},{}".format(run, cx_dis, cx_own, cx_dis - cx_own, round(100 * (cx_dis - cx_own) / cx_dis, 2)))
+    def log(self, *values, do_console=True):
+        if do_console:
+            print(*values)
+        if self.log_file != '':
+            with open(self.log_file, 'a') as f:
+                print(*values, file=f)
 
-        return [run, cx_dis, cx_own, cx_dis - cx_own, round(100 * (cx_dis - cx_own) / cx_dis, 2)]
-    elif return_iterations:
-        return (sol, i)
-    else:
-        return sol
 
 if __name__ == "__main__":
     args = parser.parse_args()
@@ -178,8 +204,9 @@ if __name__ == "__main__":
     times = []
 
     for run_num in range(runs):
+        tester = TesterCBAA()
         pre_time = time.time()
-        ret = run(num_agents, verbose, test_mode, run_num)
+        ret = tester.run(num_agents, verbose, test_mode, run_num)
         times.append(time.time() - pre_time)
         results.append(ret)
 

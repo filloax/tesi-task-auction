@@ -7,7 +7,7 @@ import sys
 from numpy.lib.function_base import average
 
 class AuctionAlgorithm:
-    def __init__(self, id, bids, agent: Agent, tasks, agent_ids, verbose = False):
+    def __init__(self, id, bids, agent: Agent, tasks, agent_ids, verbose = False, log_file = ''):
         if any(filter(lambda bid: bid < 0, bids)):
             raise ValueError("Tried to start CBAA with negative bids. They are not supported, if you need to find a minimum instead of a maximum you can usually use 1/x, 0.y^x or similar to convert the bids.")
 
@@ -17,6 +17,7 @@ class AuctionAlgorithm:
         self.tasks = tasks
         self.agent_ids = agent_ids
         self.verbose = verbose
+        self.log_file = log_file
 
         # Spareggio: aumenta i bid di un fattore casuale e relativamente insignificante per evitare blocchi
         # in caso di pareggio tra agenti
@@ -25,8 +26,7 @@ class AuctionAlgorithm:
             rand_increase = random.random() * bid_average * 0.001
             self.bids[task] = self.bids[task] + rand_increase
 
-        if self.verbose:
-            print("Init with data: \n\tid: {}\n\tbids: {}\n\ttasks: {}\n\tagents: {}\n\tneighbors: {}"
+        self.log_verbose(0, "Init with data: \n\tid: {}\n\tbids: {}\n\ttasks: {}\n\tagents: {}\n\tneighbors: {}"
                 .format(self.id, self.bids, self.tasks, self.agent_ids, self.agent.in_neighbors if self.agent != None else []))
 
         self.done = False
@@ -49,15 +49,14 @@ class AuctionAlgorithm:
                 filter(lambda task: self._bid_is_greater(self.bids[task], self.max_bids[self.id][task]) and not self._ignores_task(task), 
                 self.tasks))
 
-            # print(self.id, self, valid_tasks)
+            # self.log_verbose(iter_num, self.id, self, valid_tasks)
             if len(valid_tasks) > 0:
                 # Trova il punto di massimo, equivalente a argmax(h * c)
 
                 max_valid_bid = max(self.bids[task] for task in valid_tasks)
                 self.selected_task = list(filter(lambda task: self.bids[task] == max_valid_bid, valid_tasks))[0]
                 
-                if self.verbose:
-                    print("{} | {}: Selected {} with bid {}".format(self.id, iter_num, self.selected_task, self.bids[self.selected_task]))
+                self.log_verbose(iter_num, "Selected {} with bid {}".format(self.selected_task, self.bids[self.selected_task]))
                 self.assigned_tasks[ self.selected_task ] = 1
                 self.max_bids[self.id][self.selected_task] = self.bids[self.selected_task]            
 
@@ -78,8 +77,7 @@ class AuctionAlgorithm:
             max_bid_for_selected_task = new_max_bids[self.selected_task]
 
             if self._bid_is_greater(max_bid_for_selected_task, self.bids[self.selected_task]):
-                if self.verbose:
-                    print("{} | {}: Higher bid exists as {}, removing...".format(self.id, iter_num, max_bid_for_selected_task) )
+                self.log_verbose(iter_num, "Higher bid exists as {}, removing...".format(max_bid_for_selected_task) )
                 self.assigned_tasks[self.selected_task] = 0
                 self.selected_task = -1
             # Disabilitato in quanto mai attivabile, visto che non è possibile (senza tracciare i vincitori dei bid tramite messaggi
@@ -91,7 +89,7 @@ class AuctionAlgorithm:
             #     max_increase = bid_average * 0.001
             #     rand_increase = random.random() * max_increase
             #     self.bids[self.selected_task] = self.bids[self.selected_task] + rand_increase
-            #     print("{} | {}: Equal bid exists for {}, increased own by {} ({} -> {})...".format(self.id, iter_num, 
+            #     self.log_verbose(iter_num, "Equal bid exists for {}, increased own by {} ({} -> {})...".format(
             #         self.selected_task, rand_increase, self.bids[self.selected_task] - rand_increase, self.bids[self.selected_task]) )
             #     self.max_bids[self.id][self.selected_task] = self.bids[self.selected_task]
 
@@ -106,8 +104,7 @@ class AuctionAlgorithm:
         if not (self.max_bids[self.id] == self.prev_max_bids).all():
             self.prev_max_bids = self.max_bids[self.id].copy()
             self.max_bids_equal_cnt = 0
-            if self.verbose:
-                print("{} | {}: Max bids table changed: {}".format(self.id, iter_num, self.max_bids[self.id]))
+            self.log_verbose(iter_num, "Max bids table changed: {}".format(self.max_bids[self.id]))
         else:
             self.max_bids_equal_cnt += 1
 
@@ -124,9 +121,9 @@ class AuctionAlgorithm:
         # if self.max_bids_equal_cnt == 0: #se è cambiato dall'ultima iterazione, per evitare invii inutili
         #     #lprint("Sending: {} to {}".format(self.max_bids[self.id], neighbors))
         #     agent.neighbors_send(self.max_bids[self.id])
-        print("pre exchange")
+        self.log_verbose(iter_num, "pre exchange")
         data = self.agent.neighbors_exchange(self.max_bids[self.id])
-        print("post exchange")
+        self.log_verbose(iter_num, "post exchange")
 
         for other_id in filter(lambda id: id != self.id, data):
             self.max_bids[other_id] = data[other_id]
@@ -143,22 +140,34 @@ class AuctionAlgorithm:
         while not self.done:
             if beforeEach != None:
                 beforeEach()
-            if self.verbose:
-                print("{}: iteration {} started".format(self.id, iterations))
+            self.log_verbose(iterations, "iteration {} started".format(self.id, iterations))
+
             self.run_iter(iterations)
-            if self.verbose:
-                print("{}: iteration {} done".format(self.id, iterations))
+
+            self.log_verbose(iterations, "iteration {} done".format(self.id, iterations))
             iterations = iterations + 1
             if max_iterations > 0 and iterations >= max_iterations:
                 print("{}: max iterations reached".format(self.id))
                 self.agent.neighbors_send(self.max_bids[self.id]) # Evitare hang di altri agenti ancora in attesa
                 self.done = True
 
-        if self.verbose:
-            print("{}: Done, selected task {}".format(self.id, self.selected_task))
+        self.log_verbose(iterations, "Done, selected task {}".format(self.id, self.selected_task))
 
     def get_result(self):
         return (self.selected_task, self.assigned_tasks)
+        
+    def log_verbose(self, iter_num = None, *values):
+        string = ""
+        if iter_num is None:
+            string = "{}:".format(self.id)
+        else:
+            string = "{} | {}:".format(self.id, iter_num)
+
+        if self.verbose:
+            print(string, *values)
+        if self.log_file != '':
+            with open(self.log_file, 'a') as f:
+                print(string, *values, file=f)
 
     # Nessuno spareggio qua, viene modificato direttamente il bid
     def _bid_is_greater(self, bid1, bid2):

@@ -16,7 +16,7 @@ class ScoreFunction:
         pass
 
 class BundleAlgorithm:
-    def __init__(self, id, agent: Agent, score_function: ScoreFunction, tasks, max_agent_tasks, agent_ids, verbose = False):
+    def __init__(self, id, agent: Agent, score_function: ScoreFunction, tasks, max_agent_tasks, agent_ids, verbose = False, log_file = ''):
         self.id = id
         self.agent = agent
         # Funzione S(path, agent)
@@ -25,6 +25,7 @@ class BundleAlgorithm:
         self.tasks = tasks
         self.agent_ids = agent_ids
         self.verbose = verbose
+        self.log_file = log_file
 
         self.task_bundle = []
         self.task_path = []
@@ -46,8 +47,8 @@ class BundleAlgorithm:
         self.done_neighbors = [] 
 
     def construct_phase(self, iter_num="."):
-        if self.verbose:
-            self.log(iter_num, "pre construct bundle: {} path: {}".format(self.task_bundle, self.task_path))
+        self.log_verbose(iter_num, "pre construct bundle: {} path: {}".format(self.task_bundle, self.task_path))
+
         while len(self.task_bundle) < self.max_agent_tasks:
             # Questo è c_{ij}, la funzione di costo (o meglio, guadagno)
             # consiste in quanto l'aggiunta di un dato task sia in grado
@@ -63,8 +64,7 @@ class BundleAlgorithm:
 
             selected_task = -1
 
-            if self.verbose:
-                self.log(iter_num, "task_score_improvements: {}".format(task_score_improvements))
+            self.log_verbose(iter_num, "task_score_improvements: {}".format(task_score_improvements))
 
             if any(task in task_score_improvements and self._bid_is_greater(task_score_improvements[task], self.winning_bids[self.id][task], self.id, self.winning_agents[self.id][task]) for task in self.tasks):
                 max_score_improvement = max(task_score_improvements[task] for task in task_score_improvements if self._bid_is_greater(task_score_improvements[task], self.winning_bids[self.id][task], self.id, self.winning_agents[self.id][task]))
@@ -76,12 +76,10 @@ class BundleAlgorithm:
                     and self._bid_is_greater(task_score_improvements[task], self.winning_bids[self.id][task], self.id, self.winning_agents[self.id][task]))
 
             if selected_task < 0:
-                if self.verbose:
-                    self.log(iter_num, "Out of tasks".format(self.id, iter_num))
+                self.log_verbose(iter_num, "Out of tasks".format(self.id, iter_num))
                 break
 
-            if self.verbose:
-                self.log(iter_num, "Selected task {}\tbid is {} > {}".format(selected_task, round(task_score_improvements[selected_task], 3), round(self.winning_bids[self.id][selected_task], 3)))
+            self.log_verbose(iter_num, "Selected task {}\tbid is {} > {}".format(selected_task, round(task_score_improvements[selected_task], 3), round(self.winning_bids[self.id][selected_task], 3)))
 
             task_position = 0
             if len(self.task_path) > 0:
@@ -92,8 +90,7 @@ class BundleAlgorithm:
             self.task_path.insert(task_position + 1, selected_task)
             self.winning_bids[self.id][selected_task] = task_score_improvements[selected_task]
             self.winning_agents[self.id][selected_task] = self.id
-        if self.verbose:
-            self.log(iter_num, "Phase end path: {}".format(self.task_path))
+        self.log_verbose(iter_num, "Phase end path: {}".format(self.task_path))
         
     # Per calcolare c_{ij} nell'algoritmo
     def _get_task_score_improvement(self, task):
@@ -107,16 +104,14 @@ class BundleAlgorithm:
                 return self.score_function.eval([task]) - start_score
 
     def conflict_resolve_phase(self, iter_num="."):
-        if self.verbose:
-            self.log(iter_num, "Pre conf res state: agents: {} bids: {} bundle: {}".format(self.winning_agents[self.id], self.winning_bids[self.id], self.task_bundle))
+        self.log_verbose(iter_num, "Pre conf res state: agents: {} bids: {} bundle: {}".format(self.winning_agents[self.id], self.winning_bids[self.id], self.task_bundle))
 
-        if self.verbose:
-            self.log(iter_num, "To update: ")
-            for other_id in self.changed_ids:
-                self.log(iter_num, "\t{}: agents: {} bids: {}".format(other_id, self.winning_agents[other_id], self.winning_bids[other_id]))
-            self.log(iter_num, "Message times:")
-            for id in self.changed_ids + [self.id]:
-                self.log(iter_num, "\t{}: {}".format(id, self.message_times[id]))
+        self.log_verbose(iter_num, "To update: ")
+        for other_id in self.changed_ids:
+            self.log_verbose(iter_num, "\t{}: agents: {} bids: {}".format(other_id, self.winning_agents[other_id], self.winning_bids[other_id]))
+        self.log_verbose(iter_num, "Message times:")
+        for id in self.changed_ids + [self.id]:
+            self.log_verbose(iter_num, "\t{}: {}".format(id, self.message_times[id]))
 
         for other_id in self.changed_ids:
             for task in self.tasks:
@@ -127,9 +122,8 @@ class BundleAlgorithm:
             for non_changed_id in filter(lambda id: id not in self.changed_ids and id != self.id, self.agent_ids):
                 self.message_times[self.id][non_changed_id] = max(self.message_times[m][non_changed_id] for m in self.changed_ids + [self.id])
 
-        if self.verbose:
-            self.log(iter_num, "Post conf res state: agents: {} bids: {} bundle: {}".format(self.winning_agents[self.id], self.winning_bids[self.id], self.task_bundle))
-            self.log(iter_num, "\tMessage times: {}".format(self.message_times[self.id]))
+        self.log_verbose(iter_num, "Post conf res state: agents: {} bids: {} bundle: {}".format(self.winning_agents[self.id], self.winning_bids[self.id], self.task_bundle))
+        self.log_verbose(iter_num, "\tMessage times: {}".format(self.message_times[self.id]))
 
     def update_choice(self, other_id, task, iter_num):
         action_default = "leave"
@@ -200,14 +194,12 @@ class BundleAlgorithm:
         changed = False
 
         if choice == "update":
-            if self.verbose:
-                self.log(iter_num, "Updating from {} at task {}".format(other_id, task, self.winning_bids[other_id][task], self.winning_agents[other_id][task]))
+            self.log_verbose(iter_num, "Updating from {} at task {}".format(other_id, task, self.winning_bids[other_id][task], self.winning_agents[other_id][task]))
             self.winning_bids[self.id][task] = self.winning_bids[other_id][task]
             self.winning_agents[self.id][task] = self.winning_agents[other_id][task]
             changed = True
         elif choice == "reset":
-            if self.verbose:
-                self.log(iter_num, "Resetting from {} at task {}".format(other_id, task))
+            self.log_verbose(iter_num, "Resetting from {} at task {}".format(other_id, task))
             self.winning_bids[self.id][task] = 0
             self.winning_agents[self.id][task] = -1
             changed = True
@@ -229,12 +221,10 @@ class BundleAlgorithm:
         if not (self.winning_bids[self.id] == self.prev_win_bids).all():
             self.prev_win_bids = self.winning_bids[self.id].copy()
             self.win_bids_equal_cnt = 0
-            if self.verbose:
-                self.log(iter_num, "Max bids table changed: {}".format(self.winning_bids[self.id]))
+            self.log_verbose(iter_num, "Max bids table changed: {}".format(self.winning_bids[self.id]))
         else:
             self.win_bids_equal_cnt += 1
-            if self.verbose:
-                self.log(iter_num, "win_bids_equal_cnt: {}".format(self.win_bids_equal_cnt))
+            self.log_verbose(iter_num, "win_bids_equal_cnt: {}".format(self.win_bids_equal_cnt))
 
         # Numero di iterazioni senza alterazioni nello stato rilevante per considerare l'operazione finita
         num_stable_runs = 2 * len(self.agent_ids) * self.max_agent_tasks + 1
@@ -247,8 +237,7 @@ class BundleAlgorithm:
     def run_iter(self, iter_num = "."):
         self.construct_phase(iter_num)
 
-        if self.verbose:
-            self.log(iter_num, "pre exchange, done: {}".format(self.done_neighbors))
+        self.log_verbose(iter_num, "pre exchange, done: {}".format(self.done_neighbors))
         send_data = self._build_send_data()
 
         # IPOTESI: vicini non cambiano nel tempo
@@ -256,8 +245,7 @@ class BundleAlgorithm:
         if set(self.agent.in_neighbors) != set(self.done_neighbors):
             data = self.agent.neighbors_exchange(send_data)
             rec_time = time.time()
-            if self.verbose:
-                self.log(iter_num, "post exchange, received: {}".format(data))
+            self.log_verbose(iter_num, "post exchange, received: {}".format(data))
 
             self.changed_ids = []
             for other_id in filter(lambda id: id != self.id, data):
@@ -273,8 +261,7 @@ class BundleAlgorithm:
             self.agent.neighbors_send(send_data)
             self.changed_ids = []
 
-        if self.verbose:
-            self.log(iter_num, "changed: {}".format(self.changed_ids))
+        self.log_verbose(iter_num, "changed: {}".format(self.changed_ids))
 
         self.conflict_resolve_phase(iter_num)
 
@@ -298,22 +285,22 @@ class BundleAlgorithm:
         while not self.done:
             if beforeEach != None:
                 beforeEach()
-            if self.verbose:
-                print("{}: iteration {} started".format(self.id, iterations))
+
+            self.log_verbose(iterations, "{}: iteration {} started".format(self.id, iterations))
+
             self.run_iter(iterations)
-            if self.verbose:
-                print("{}: iteration {} done".format(self.id, iterations))
+
+            self.log_verbose(iterations, "{}: iteration {} done".format(self.id, iterations))
             iterations = iterations + 1
             if max_iterations > 0 and iterations >= max_iterations:
-                print("{}: max iterations reached".format(self.id))
+                self.log(iterations, "{}: max iterations reached".format(self.id))
                 self.done = True
 
         send_data = self._build_send_data()
         self.agent.neighbors_send(send_data) # Evitare hang di altri agenti ancora in attesa
 
-        if self.verbose:
-            self.log(iterations, "Done, selected tasks {},".format(self.id, self.task_path))
-            self.log(iterations, "Sent final data: {},".format(self.id, send_data))
+        self.log_verbose(iterations, "Done, selected tasks {},".format(self.id, self.task_path))
+        self.log_verbose(iterations, "Sent final data: {},".format(self.id, send_data))
 
     def get_result(self):
         return (self.task_path, self.task_bundle)
@@ -335,11 +322,29 @@ class BundleAlgorithm:
         return str(self.__dict__)
 
     def log(self, iter_num = None, *values):
+        string = ""
         if iter_num is None:
-            print("{}:".format(self.id), *values)
+            string = "{}:".format(self.id)
         else:
-            print("{} | {}:".format(self.id, iter_num), *values)
+            string = "{} | {}:".format(self.id, iter_num)
 
+        if self.log_file != '':
+            with open(self.log_file, 'a') as f:
+                print(string, *values, file=f)
+        print(string, *values)
+
+    def log_verbose(self, iter_num = None, *values):
+        string = ""
+        if iter_num is None:
+            string = "{}:".format(self.id)
+        else:
+            string = "{} | {}:".format(self.id, iter_num)
+
+        if self.verbose:
+            print(string, *values)
+        if self.log_file != '':
+            with open(self.log_file, 'a') as f:
+                print(string, *values, file=f)
 
 class TimeScoreFunction(ScoreFunction):
     """
