@@ -18,6 +18,13 @@ class AuctionAlgorithm:
         self.agent_ids = agent_ids
         self.verbose = verbose
 
+        # Spareggio: aumenta i bid di un fattore casuale e relativamente insignificante per evitare blocchi
+        # in caso di pareggio tra agenti
+        bid_average = average(self.bids)
+        for task in self.tasks:
+            rand_increase = random.random() * bid_average * 0.001
+            self.bids[task] = self.bids[task] + rand_increase
+
         if self.verbose:
             print("Init with data: \n\tid: {}\n\tbids: {}\n\ttasks: {}\n\tagents: {}\n\tneighbors: {}"
                 .format(self.id, self.bids, self.tasks, self.agent_ids, self.agent.in_neighbors if self.agent != None else []))
@@ -54,15 +61,15 @@ class AuctionAlgorithm:
                 self.assigned_tasks[ self.selected_task ] = 1
                 self.max_bids[self.id][self.selected_task] = self.bids[self.selected_task]            
 
+    # TODO: recuperare in parte il sistema di rilevazione origine max bid
+    # per attivare lo spareggio SE e SOLO SE è uguale al max bid ed esso viene da altri
+
     def converge_phase(self, iter_num="."):
         # Aggiorna la propria lista dei bid massimi in base a quelli ricevuti dagli altri
         # agenti, in modo tale da avere l'effettivo bid globalmente massimo per ogni task
-        # ~~La lista viene temporaneamente salvata in variabile a parte per permettere di capire da chi provengano~~
-        # ~~eventuali cambiamenti durante questa fase, e il campo della classe è aggiornato solo alla fine~~
+        # La lista viene temporaneamente salvata in variabile a parte per permettere di capire da chi provengano,
+        # o meglio se siano cambiati in questa iterazione
         new_max_bids = np.array([max(self.max_bids[agent_id][task] for agent_id in self.agent_ids) for task in self.tasks])
-
-        # Spareggio in base a id non più necessario, quindi assegnato direttamente
-        self.max_bids[self.id] = new_max_bids
 
         # Se il proprio bid per il task selezionato non è quello più alto,
         # allora lascia il task selezionato all'agente che ha posto il bid
@@ -75,12 +82,20 @@ class AuctionAlgorithm:
                     print("{} | {}: Higher bid exists as {}, removing...".format(self.id, iter_num, max_bid_for_selected_task) )
                 self.assigned_tasks[self.selected_task] = 0
                 self.selected_task = -1
-            elif self._bid_is_equal(max_bid_for_selected_task, self.bids[self.selected_task]):
-                #In caso di pareggio, aumenta casualmente il bid per spareggiare, in una quantità trascurabile relativamente ai bid
-                bid_average = average(self.max_bids)
-                max_increase = bid_average * 0.001
-                self.bids[self.selected_task] = self.bids[self.selected_task] + random.random() * max_increase
-                self.max_bids[self.id][self.selected_task] = self.bids[self.selected_task]
+            # Disabilitato in quanto mai attivabile, visto che non è possibile (senza tracciare i vincitori dei bid tramite messaggi
+            # come in CBBA) capire se il bid uguale che si riceve avvia avuto origine da sè o da un'altro agente
+            # Sostituito con aumento casuale del bid all'inizio
+            # elif self._bid_is_equal(max_bid_for_selected_task, self.bids[self.selected_task]) and new_max_bids[self.selected_task] != self.max_bids[self.id][self.selected_task]:
+            #     #In caso di pareggio, aumenta casualmente il bid per spareggiare, in una quantità trascurabile relativamente ai bid
+            #     bid_average = average(self.max_bids)
+            #     max_increase = bid_average * 0.001
+            #     rand_increase = random.random() * max_increase
+            #     self.bids[self.selected_task] = self.bids[self.selected_task] + rand_increase
+            #     print("{} | {}: Equal bid exists for {}, increased own by {} ({} -> {})...".format(self.id, iter_num, 
+            #         self.selected_task, rand_increase, self.bids[self.selected_task] - rand_increase, self.bids[self.selected_task]) )
+            #     self.max_bids[self.id][self.selected_task] = self.bids[self.selected_task]
+
+        self.max_bids[self.id] = new_max_bids
 
 
     def check_done(self, iter_num="."):
