@@ -1,5 +1,5 @@
 import sys
-from utils import bids_to_string
+from utils import bids_to_string, sol_to_string
 from task_seq_tester import TaskTester
 from bundle_algo import BundleAlgorithm, TimeScoreFunction
 from task_positions import gen_distance_calc_time_fun, generate_positions, load_positions, write_positions
@@ -19,8 +19,8 @@ parser.add_argument('-t', '--tasks', help="Amount of tasks", required=True, type
 parser.add_argument('-L', '--agent-tasks', help="Max tasks per agent", required=True, type=int)
 parser.add_argument('--load-pos', help="Use last generated positions instead of creating new", default=False, action='store_true')
 parser.add_argument('-v', '--verbose', default=False, action='store_true')
-parser.add_argument('--test-mode', default=False, action='store_true')
-parser.add_argument('--test-runs', default=1, type=int)
+parser.add_argument('--test-mode', default='', type=str)
+parser.add_argument('-r', '--runs', default=1, type=int)
 
 class TesterCBBA(TaskTester):
     def __init__(self):
@@ -114,7 +114,7 @@ class TesterCBBA(TaskTester):
                 self.log("\n".join(["{}: {}".format(agent.id, agent.task_path) for agent in agents]), do_console=verbose)
                 self.log("-------------------", do_console=verbose)
                 self.log("Assigned tasks:", do_console=verbose)
-                self.log(str(np.array([agent.assigned_tasks for agent in agents])).replace("0.", "_ "), do_console=verbose)
+                self.log(sol_to_string(agents), do_console=verbose)
                 self.log("###################", do_console=verbose)
 
                 # time.sleep(0.5)
@@ -142,7 +142,7 @@ class TesterCBBA(TaskTester):
                 self.log("\n".join(["{}: {}".format(agent.id, agent.task_path) for agent in agents]))
                 self.log("-------------------")
                 self.log("Assigned tasks:")
-                self.log(str(np.array([agent.assigned_tasks for agent in agents])).replace("0.", "_ "))
+                self.log(sol_to_string(agents))
                 self.log("###################")
 
         sol = np.array([agent.assigned_tasks for agent in agents])
@@ -195,26 +195,41 @@ if __name__ == "__main__":
     max_agent_tasks = args.agent_tasks
     verbose = args.verbose
     test_mode = args.test_mode
-    runs = args.test_runs
+    runs = args.runs
 
-    if test_mode:
+    if test_mode == 'test':
         print("run,c * x (disropt),c * x (own), diff, diff %")
 
     results = []
     times = []
+
+    silent = test_mode == 'conflict'
 
     for run_num in range(runs):
         agent_positions = None
         task_positions = None
         if args.load_pos:
             (agent_positions, task_positions) = load_positions()
-            print("Loaded positions")
+            if not silent:
+                print("Loaded positions")
 
         tester = TesterCBBA()
         pre_time = time.time()
-        ret = tester.run(num_agents, num_tasks, max_agent_tasks, verbose, test_mode, run_num, agent_positions=agent_positions, task_positions=task_positions)
+        ret = tester.run(num_agents, num_tasks, max_agent_tasks, verbose, test_mode == 'test', run_num, agent_positions=agent_positions, task_positions=task_positions, silent=silent)
         times.append(time.time() - pre_time)
         results.append(ret)
+
+        if test_mode == 'conflict':
+            has_conflicts = np.any(np.sum(ret, 0) > 1)
+            if has_conflicts:
+                print("FOUND CONFLICTS!")
+                print("Run: {}".format(run_num))
+                print("num_agents: {} num_tasks: {} L: {}")
+                print("sol:\n{}".format(sol_to_string(sol=ret)))
+                break
+
+    if test_mode == 'conflict':
+        print("No conflicts found in {} runs".format(runs))
 
     # print("---------------------")
     # print("Average time taken:", average(times))

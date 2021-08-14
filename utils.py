@@ -16,3 +16,8 @@ def bids_to_string(bids):
         bids = np.array(bids)
 
     return str(np.round(bids, 3))
+
+def sol_to_string(agents = None, sol = None):
+    if sol is None:
+        sol = [agent.assigned_tasks for agent in agents]
+    return str(np.array(sol)).replace("0.", "_ ")

@@ -133,37 +133,38 @@ class BundleAlgorithm:
         # ha inviate i dati;
         # Seconda chiave tabella: valori dell'agente vincitore secondo questo agente
         # Valori: stringa per valore action, o per condizionali lambda id -> stringa
+        # Tabella adattata dall'articolo
         case_table = {
             other_id: {
-                self.id: lambda id, rec_id: "update" if self._bid_is_greater(self.winning_bids[id][task], self.winning_bids[self.id][task], id, self.id) else action_default,
+                self.id: lambda send_winid, rec_winid: "update" if self._bid_is_greater(self.winning_bids[other_id][task], self.winning_bids[self.id][task], other_id, self.id) else action_default,
                 other_id: "update",
-                "default": lambda id, rec_id: "update" if self.message_times[other_id][id] > self.message_times[self.id][id] or 
+                "default": lambda send_winid, rec_winid: "update" if self.message_times[other_id][rec_winid] > self.message_times[self.id][rec_winid] or 
                     self._bid_is_greater(self.winning_bids[other_id][task], self.winning_bids[self.id][task], other_id, self.id) else action_default,
                 -1: "update",
             },
             self.id: {
                 self.id: "leave",
                 other_id: "reset",
-                "default": lambda id, rec_id: "reset" if self.message_times[other_id][id] > self.message_times[self.id][id] else action_default,
+                "default": lambda send_winid, rec_winid: "reset" if self.message_times[other_id][rec_winid] > self.message_times[self.id][rec_winid] else action_default,
                 -1: "leave",
             },
             "default": {
-                self.id: lambda id, rec_id: "update" if self.message_times[other_id][id] > self.message_times[self.id][id] and 
+                self.id: lambda send_winid, rec_winid: "update" if self.message_times[other_id][send_winid] > self.message_times[self.id][send_winid] and 
                     self._bid_is_greater(self.winning_bids[other_id][task], self.winning_bids[self.id][task], other_id, self.id) else action_default,
-                other_id: lambda id, rec_id: "update" if self.message_times[other_id][id] > self.message_times[self.id][id] else "reset",
-                "this_id": lambda id, rec_id: "update" if self.message_times[other_id][id] > self.message_times[self.id][id] else action_default,
-                "default": lambda id, rec_id:
-                    "update" if self.message_times[other_id][id] > self.message_times[self.id][id] and 
-                        (self.message_times[other_id][rec_id] > self.message_times[self.id][rec_id] or
+                other_id: lambda send_winid, rec_winid: "update" if self.message_times[other_id][send_winid] > self.message_times[self.id][send_winid] else "reset",
+                "this_id": lambda send_winid, rec_winid: "update" if self.message_times[other_id][send_winid] > self.message_times[self.id][send_winid] else action_default,
+                "default": lambda send_winid, rec_winid:
+                    "update" if self.message_times[other_id][send_winid] > self.message_times[self.id][send_winid] and 
+                        (self.message_times[other_id][rec_winid] > self.message_times[self.id][rec_winid] or
                         self._bid_is_greater(self.winning_bids[other_id][task], self.winning_bids[self.id][task], other_id, self.id)) else
-                    ("reset" if self.message_times[other_id][rec_id] > self.message_times[self.id][rec_id] and
-                        self.message_times[self.id][id] > self.message_times[other_id][id] else action_default),
-                -1: lambda id, rec_id: "update" if self.message_times[other_id][id] > self.message_times[self.id][id] else action_default,
+                    ("reset" if self.message_times[other_id][rec_winid] > self.message_times[self.id][rec_winid] and
+                        self.message_times[self.id][send_winid] > self.message_times[other_id][send_winid] else action_default),
+                -1: lambda send_winid, rec_winid: "update" if self.message_times[other_id][send_winid] > self.message_times[self.id][send_winid] else action_default,
             },
             -1: {
                 self.id: "leave",
                 other_id: "update",
-                "default": lambda id, rec_id: "update" if self.message_times[other_id][id] > self.message_times[self.id][id] else action_default,
+                "default": lambda send_winid, rec_winid: "update" if self.message_times[other_id][rec_winid] > self.message_times[self.id][rec_winid] else action_default,
                 -1: "leave",
             },
         }

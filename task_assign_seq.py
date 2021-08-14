@@ -1,5 +1,5 @@
 import random
-from utils import bids_to_string
+from utils import bids_to_string, sol_to_string
 from task_seq_tester import TaskTester
 from disropt.functions import Variable
 from disropt.problems import Problem
@@ -92,7 +92,7 @@ class TesterCBAA(TaskTester):
                 self.log(bids_to_string([agent.max_bids[agent.id] for agent in agents]), do_console=verbose)
                 self.log("-------------------", do_console=verbose)
                 self.log("Assigned tasks:", do_console=verbose)
-                self.log(str(np.array([agent.assigned_tasks for agent in agents])).replace("0.", "_ "), do_console=verbose)
+                self.log(sol_to_string(agents), do_console=verbose)
                 self.log("-------------------", do_console=verbose)
                 self.log("Bids:", do_console=verbose)
                 self.log(np.round(np.array([agent.bids for agent in agents]), 2), do_console=verbose)
@@ -109,7 +109,7 @@ class TesterCBAA(TaskTester):
             if not test_mode and (force_print or not silent):
                 self.log("Final version after", self.iterations, "self.iterations:")
                 self.log("Assigned tasks:")
-                self.log(str(np.array([agent.assigned_tasks for agent in agents])).replace("0.", "_ "))
+                self.log(sol_to_string(agents))
                 self.log("-------------------")
                 self.log("Max bids:")
                 self.log(bids_to_string([agent.max_bids[agent.id] for agent in agents]))
