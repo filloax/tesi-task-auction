@@ -2,9 +2,8 @@ from os import error
 import random
 import numpy as np
 from disropt.agents import Agent
-import sys
-
 from numpy.lib.function_base import average
+from utils import *
 
 class AuctionAlgorithm:
     def __init__(self, id, bids, agent: Agent, tasks, agent_ids, verbose = False, log_file = ''):
@@ -183,12 +182,3 @@ class AuctionAlgorithm:
 
     def __repr__(self):
         return str(self.__dict__)
-
-
-# Più valori restituiti nel caso di pareggio
-# opzionalmente da gestire con criterio a parte, ma è
-# comunque abbastanza raro
-# Equivalente di argmax
-def find_max_index(lst):
-    max_val = max(lst)
-    return [idx for idx in range(len(lst)) if lst[idx] == max_val]

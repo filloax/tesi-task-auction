@@ -1,6 +1,7 @@
 import numpy as np
 from disropt.agents import Agent
 import time
+from utils import *
 
 class ScoreFunction:
     def __init__(self, agent_id: int):
@@ -31,6 +32,7 @@ class BundleAlgorithm:
         self.task_path = []
         self.assigned_tasks = np.zeros(len(self.tasks))
 
+        self.bids = np.zeros(len(self.tasks)) # Usato solo per debug, impostati in fase di costruzione
         self.winning_bids = np.zeros((len(self.agent_ids), len(self.tasks)))
         self.winning_agents = -np.ones((len(self.agent_ids), len(self.tasks)))
         self.prev_win_bids = np.zeros(len(self.tasks))
@@ -53,18 +55,18 @@ class BundleAlgorithm:
             # Questo è c_{ij}, la funzione di costo (o meglio, guadagno)
             # consiste in quanto l'aggiunta di un dato task sia in grado
             # di aumentare il punteggio del percorso
+            self.bids = np.array([self.get_task_gain(task) if not self._ignores_task(task) else 0 for task in self.tasks])
+
             # Uso di dict per non considerare task non validi o già aggiunti
-            task_score_improvements = {
-                task: self._get_task_score_improvement(task) for task in self.tasks 
-                    if task not in self.task_bundle and not self._ignores_task(task)
-            }
+            task_score_improvements = { task: self.bids[task] for task in self.tasks 
+                    if task not in self.task_bundle and not self._ignores_task(task) }
 
             if any(task_score_improvements[task] < 0 for task in task_score_improvements):
                 raise ValueError("Got negative score improvement in CBBA. Negative values are not supported, if you need to find a minimum instead of a maximum you can usually use 1/x, 0.y^x or similar somewhere in the score function.")
 
             selected_task = -1
 
-            self.log_verbose(iter_num, "task_score_improvements: {}".format(task_score_improvements))
+            self.log_verbose(iter_num, "task_score_improvements: {}".format(bids_to_string([bid if task in task_score_improvements else 0 for (task, bid) in enumerate(self.bids)])))
 
             if any(task in task_score_improvements and self._bid_is_greater(task_score_improvements[task], self.winning_bids[self.id][task], self.id, self.winning_agents[self.id][task]) for task in self.tasks):
                 max_score_improvement = max(task_score_improvements[task] for task in task_score_improvements if self._bid_is_greater(task_score_improvements[task], self.winning_bids[self.id][task], self.id, self.winning_agents[self.id][task]))
@@ -93,7 +95,7 @@ class BundleAlgorithm:
         self.log_verbose(iter_num, "Phase end path: {}".format(self.task_path))
         
     # Per calcolare c_{ij} nell'algoritmo
-    def _get_task_score_improvement(self, task):
+    def get_task_gain(self, task):
         if task in self.task_bundle:
             return 0
         else:
@@ -367,23 +369,9 @@ class TimeScoreFunction(ScoreFunction):
         return sum((self.task_discount_factors[task] ** self.calc_time_fun(self.agent_id, task, path)
             * (self.task_static_scores[task] if not self.task_static_scores is None else 1)) for task in path)
 
-    
-
-
 
 ## Utilità
 
 # Operazione ⊕ nell'articolo
 def insert_in_list(lst, pos, val):
     return lst[:pos + 1] + [val] + lst[pos + 1:]
-
-# Più valori restituiti nel caso di pareggio
-# opzionalmente da gestire con criterio a parte, ma è
-# comunque abbastanza raro
-# Equivalente di argmax
-def find_max_index(lst):
-    if type(lst) is not list:
-        lst = list(lst)
-
-    max_val = max(lst)
-    return [idx for idx in range(len(lst)) if lst[idx] == max_val]

@@ -67,7 +67,7 @@ def generate_positions(num_agents: int, num_tasks: int,
 
     return (agent_positions, task_positions)
 
-def load_positions(agent_pos_path, task_pos_path):
+def load_positions(agent_pos_path = DEFAULT_AGENT_FILE, task_pos_path = DEFAULT_TASK_FILE):
     task_positions = []
     with open(task_pos_path) as task_file:
         reader = csv.reader(task_file, delimiter=' ', quotechar='|')
@@ -82,7 +82,7 @@ def load_positions(agent_pos_path, task_pos_path):
             agent_positions.append([float(row[0]), float(row[1])])
     agent_positions = np.array(agent_positions)
 
-    return (task_positions, agent_positions)
+    return (agent_positions, task_positions)
 
 def linear_dist(pos1, pos2):
     return np.sqrt(np.sum((pos1 - pos2) ** 2))
