@@ -2,7 +2,7 @@
 
 echo "Testing with agent amounts from 3 to 25"
 
-echo "agents num,avg CBAA opt diff(%),avg CBBA opt diff(%),avg CBAA time(ms),avg CBBA time(ms),avg CBAA iterations,avg CBBA iterations" > compare_results.csv
+echo "agents num,avg CBAA opt diff(%),avg CBBA opt diff(%),avg CBAA time(ms),avg CBBA time(ms),avg CBAA iterations,avg CBBA iterations,CBAA conflicts,CBBA conflicts" > compare_results.csv
 
 local_path=$(realpath .)
 
@@ -27,9 +27,14 @@ for n_agents in $(seq 3 2 25); do
 	time_cbba_avg=$(cat "$TMP" | grep "Avg. CBBA" | cut -d: -f4 | sed 's/ms\titerations//' | sed 's/ //')
 	it_cbaa_avg=$(cat "$TMP" | grep "Avg. CBAA" | cut -d: -f5 | sed 's/ //')
 	it_cbba_avg=$(cat "$TMP" | grep "Avg. CBBA" | cut -d: -f5 | sed 's/ //')
+	cbaa_conflicts=$(cat "$TMP" | grep "WARNING: CBAA had " | awk '{ print $4 }')
+	test -z "$cbaa_conflicts" && cbaa_conflicts="0"
+	cbba_conflicts=$(cat "$TMP" | grep "WARNING: CBBA had " | awk '{ print $4 }')
+	test -z "$cbaa_conflicts" && cbba_conflicts="0"
 
-	echo "$n_agents,$diff_cbaa_avg,$diff_cbba_avg,$time_cbaa_avg,$time_cbba_avg,$it_cbaa_avg,$it_cbba_avg" >> "$local_path/compare_results.csv"
+	res="$n_agents,$diff_cbaa_avg,$diff_cbba_avg,$time_cbaa_avg,$time_cbba_avg,$it_cbaa_avg,$it_cbba_avg,$cbaa_conflicts,$cbba_conflicts"
+	echo "$res" >> "$local_path/compare_results.csv"
 	echo "Done with results:"
-	echo "$n_agents,$diff_cbaa_avg,$diff_cbba_avg,$time_cbaa_avg,$time_cbba_avg,$it_cbaa_avg,$it_cbba_avg"
+	echo "$res"
 	rm "$TMP"
 done

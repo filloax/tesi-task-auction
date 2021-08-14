@@ -1,8 +1,11 @@
 import argparse
+from itertools import count
 import math
 import time
 from threading import Thread
 import os
+from typing import Iterator
+from utils import sol_to_string
 
 from disropt.functions import Variable
 from disropt.problems.problem import Problem
@@ -85,13 +88,13 @@ def do_test(num_agents: int, runs: int, verbose = False, print_iter_progress = F
         if print_iter_progress:
             tester_cbaa.start()
 
-            (done_agents, iterations, win_bids_progress) = tester_cbaa.tester.get_done_status()
-            printIterationsProgress("CBAA", iterations, win_bids_progress, num_agents, True)
+            (done_agents, iterations, win_bids_progress, last_solution) = tester_cbaa.tester.get_cur_status()
+            printIterationsProgress("CBAA", iterations, win_bids_progress, num_agents, last_solution, True)
             while tester_cbaa.is_alive():
                 time.sleep(prog_update_time)
-                (done_agents, iterations, win_bids_progress) = tester_cbaa.tester.get_done_status()
-                printIterationsProgress("CBAA", iterations, win_bids_progress, num_agents)
-            printIterationsProgress("CBAA", iterations, win_bids_progress, num_agents, go_back_only=True)
+                (done_agents, iterations, win_bids_progress, last_solution) = tester_cbaa.tester.get_cur_status()
+                printIterationsProgress("CBAA", iterations, win_bids_progress, num_agents, last_solution)
+            printIterationsProgress("CBAA", iterations, win_bids_progress, num_agents, last_solution, go_back_only=True)
         else:
             tester_cbaa.run() #stesso thread
 
@@ -107,13 +110,13 @@ def do_test(num_agents: int, runs: int, verbose = False, print_iter_progress = F
         if print_iter_progress:
             tester_cbba.start()
 
-            (done_agents, iterations, win_bids_progress) = tester_cbba.tester.get_done_status()
-            printIterationsProgress("CBBA", iterations, win_bids_progress, num_agents, True)
+            (done_agents, iterations, win_bids_progress, last_solution) = tester_cbba.tester.get_cur_status()
+            printIterationsProgress("CBBA", iterations, win_bids_progress, num_agents, last_solution, True)
             while tester_cbba.is_alive():
                 time.sleep(prog_update_time)
-                (done_agents, iterations, win_bids_progress) = tester_cbba.tester.get_done_status()
-                printIterationsProgress("CBBA", iterations, win_bids_progress, num_agents)
-            printIterationsProgress("CBBA", iterations, win_bids_progress, num_agents, go_back_only=True)
+                (done_agents, iterations, win_bids_progress, last_solution) = tester_cbba.tester.get_cur_status()
+                printIterationsProgress("CBBA", iterations, win_bids_progress, num_agents, last_solution)
+            printIterationsProgress("CBBA", iterations, win_bids_progress, num_agents, last_solution, go_back_only=True)
         else:
             tester_cbba.run() #stesso thread
 
@@ -160,11 +163,17 @@ def do_test(num_agents: int, runs: int, verbose = False, print_iter_progress = F
             print("CBAA assigned tasks:\n{}".format(sol_cbaa))
             print("CBBA assigned tasks:\n{}".format(sol_cbba))
 
+            if tester_cbaa.tester.has_conflicts(sol_cbaa):
+                print("WARNING: CBAA solution has conflicts!")
+            if tester_cbba.tester.has_conflicts(sol_cbba):
+                print("WARNING: CBBA solution has conflicts!")
+
             print("Optimized\tc * x: {}".format(cx_dis))
             print("CBAA\tc * x: {}\tdiff: {}%".format(cx_cbaa, round(100 * (cx_dis- cx_cbaa) / cx_dis, 2)))
             print("CBBA\tc * x: {}\tdiff: {}%".format(cx_cbba, round(100 * (cx_dis- cx_cbba) / cx_dis, 2)))
         else:
-            results.append((cx_dis, cx_cbaa, cx_cbba, time_cbaa, time_cbba, iterations_cbaa, iterations_cbba))
+            results.append((cx_dis, cx_cbaa, cx_cbba, time_cbaa, time_cbba, iterations_cbaa, iterations_cbba, 
+                tester_cbaa.tester.has_conflicts(sol_cbaa), tester_cbba.tester.has_conflicts(sol_cbba)))
 
     if runs > 1:
         cx_dis_avg = average([results[run][0] for run in range(runs)])
@@ -174,7 +183,9 @@ def do_test(num_agents: int, runs: int, verbose = False, print_iter_progress = F
         time_cbba_avg = average([results[run][4] for run in range(runs)])
         iterations_cbaa_avg = average([results[run][5] for run in range(runs)])
         iterations_cbba_avg = average([results[run][6] for run in range(runs)])
-        print("Results over {} runs:".format(runs))
+        conflicts_cbaa = len(list(filter(None, [results[run][7] for run in range(runs)])))
+        conflicts_cbba = len(list(filter(None, [results[run][8] for run in range(runs)])))
+        print(MOVE_TO_PREV_LINE_START + "Results over {} runs:".format(runs) + " " * 70)
         print("Avg. Optimized\tc * x: {}".format(round(cx_dis_avg, 2)))
         print("Avg. CBAA\tc * x: {}\tdiff: {}%\ttime: {}ms\titerations: {}".format(
             round(cx_cbaa_avg, 2), 
@@ -188,10 +199,14 @@ def do_test(num_agents: int, runs: int, verbose = False, print_iter_progress = F
             math.floor(time_cbba_avg * 1000),
             round(iterations_cbba_avg, 2)),
             )
+        if conflicts_cbaa > 0:
+            print(f'WARNING: CBAA had {conflicts_cbaa} conflicts!')
+        if conflicts_cbba > 0:
+            print(f'WARNING: CBAA had {conflicts_cbba} conflicts!')
 
 # Fonte: https://stackoverflow.com/questions/3173320/text-progress-bar-in-the-console
 # Print iterations progress
-def printProgressBar (iteration, total, prefix = '', suffix = '', decimals = 1, length = 100, fill = '█', printEnd = "\r"):
+def printProgressBar (iteration, total, prefix = '', suffix = '', decimals = 1, length = 50, fill = '█', printEnd = "\r"):
     """
     Call in a loop to create terminal progress bar
     @params:
@@ -212,7 +227,7 @@ def printProgressBar (iteration, total, prefix = '', suffix = '', decimals = 1, 
     if iteration == total: 
         print()
 
-def printIterationsProgress(suffix, iterations, win_bids_list, num_agents, start = False, go_back_only = False):
+def printIterationsProgress(suffix, iterations, win_bids_list, num_agents, solution, start = False, go_back_only = False):
     required_const_bids = num_agents * 2 + 1
     if not start:
         print(MOVE_TO_PREV_LINE_START * (num_agents + 2), flush=True)
@@ -221,21 +236,28 @@ def printIterationsProgress(suffix, iterations, win_bids_list, num_agents, start
 
     id_len = len(str(num_agents))
     id_str = "{:" + str(id_len) + "d}"
+    str_1_len = id_len + 31
+    sol_lines = sol_to_string(sol=solution).split("\n") if solution is not None else ["" for i in range(num_agents)]
+    sol_line_len = max(len(line) for line in sol_lines)
 
     if not go_back_only:
         print("Iteration #{:5d} | {}                   ".format(iterations, suffix), flush=True)
         for i in range(num_agents):
+            base_str = ""
             if len(win_bids_list) > i:
                 pct_done = round(min(win_bids_list[i] * 100 / required_const_bids, 100), 2)
                 win_bids = win_bids_list[i]
                 if win_bids > required_const_bids:
                     win_bids = str(required_const_bids) + "+"
-                print((id_str + ": {:>6.2f}% at {}/{} completion        ").format(i, pct_done, win_bids, required_const_bids), flush=True)
+                base_str = (id_str + ": {:>6.2f}% at {}/{} completion").format(i, pct_done, win_bids, required_const_bids)
             else:
-                print((id_str + ":                                         ").format(i, len(win_bids_list)), flush=True)
+                base_str = (id_str + ":").format(i, len(win_bids_list))
+
+            out = base_str.ljust(str_1_len) + sol_lines[i].ljust(sol_line_len)
+            print(out, flush=True)
     else:
         for i in range(num_agents + 1):
-            print("                                                       ", flush=True)
+            print(' ' * (sol_line_len + str_1_len), flush=True)
         print(MOVE_TO_PREV_LINE_START * (num_agents + 3), flush=True)
 
 def main(agent_nums_to_test: list, runs: int, verbose = False, print_iter_progress = False, prog_update_time = 0.5):

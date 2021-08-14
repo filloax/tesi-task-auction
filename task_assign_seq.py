@@ -87,12 +87,15 @@ class TesterCBAA(TaskTester):
 
                     self.const_winning_bids[id] = agents[id].max_bids_equal_cnt
 
+                sol = np.array([agent.assigned_tasks for agent in agents])
+                self.last_solution = sol
+
                 self.log("Iter", self.iterations, do_console=verbose)
                 self.log("Max bids:", do_console=verbose)
                 self.log(bids_to_string([agent.max_bids[agent.id] for agent in agents]), do_console=verbose)
                 self.log("-------------------", do_console=verbose)
                 self.log("Assigned tasks:", do_console=verbose)
-                self.log(sol_to_string(agents), do_console=verbose)
+                self.log(sol_to_string(sol=sol), do_console=verbose)
                 self.log("-------------------", do_console=verbose)
                 self.log("Bids:", do_console=verbose)
                 self.log(np.round(np.array([agent.bids for agent in agents]), 2), do_console=verbose)
@@ -116,9 +119,14 @@ class TesterCBAA(TaskTester):
                 self.log("-------------------")
                 self.log("Bids:")
                 self.log(bids_to_string([agent.bids for agent in agents]))
+                
+                if self.has_conflicts(sol):
+                    self.log("!!WARNING!!: HAS TASK ASSIGNMENT CONFLICTS!")
+
                 self.log("###################")
 
         sol = np.array([agent.assigned_tasks for agent in agents])
+        self.last_solution = sol
 
         if not test_mode and (force_print or not silent):
             self.log("\nDouble-check with Disropt optimization:")

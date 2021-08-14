@@ -101,6 +101,9 @@ class TesterCBBA(TaskTester):
 
                     self.const_winning_bids[id] = agents[id].win_bids_equal_cnt
 
+                sol = np.array([agent.assigned_tasks for agent in agents])
+                self.last_solution = sol
+
                 self.log("Iter", self.iterations, do_console=verbose)
                 self.log("Bids:", do_console=verbose)
                 self.log(bids_to_string([agent.bids for agent in agents]), do_console=verbose)
@@ -114,7 +117,7 @@ class TesterCBBA(TaskTester):
                 self.log("\n".join(["{}: {}".format(agent.id, agent.task_path) for agent in agents]), do_console=verbose)
                 self.log("-------------------", do_console=verbose)
                 self.log("Assigned tasks:", do_console=verbose)
-                self.log(sol_to_string(agents), do_console=verbose)
+                self.log(sol_to_string(sol=sol), do_console=verbose)
                 self.log("###################", do_console=verbose)
 
                 # time.sleep(0.5)
@@ -143,9 +146,15 @@ class TesterCBBA(TaskTester):
                 self.log("-------------------")
                 self.log("Assigned tasks:")
                 self.log(sol_to_string(agents))
+
+                if self.has_conflicts(sol):
+                    self.log("!!WARNING!!: HAS TASK ASSIGNMENT CONFLICTS!")
+
                 self.log("###################")
 
+
         sol = np.array([agent.assigned_tasks for agent in agents])
+        self.last_solution = sol
 
         if test_mode:
             x = Variable(num_agents * num_tasks)
@@ -220,8 +229,7 @@ if __name__ == "__main__":
         results.append(ret)
 
         if test_mode == 'conflict':
-            has_conflicts = np.any(np.sum(ret, 0) > 1)
-            if has_conflicts:
+            if tester.has_conflicts(ret):
                 print("FOUND CONFLICTS!")
                 print("Run: {}".format(run_num))
                 print("num_agents: {} num_tasks: {} L: {}")
