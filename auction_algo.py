@@ -159,9 +159,9 @@ class AuctionAlgorithm:
     def log_verbose(self, iter_num = None, *values):
         string = ""
         if iter_num is None:
-            string = "{}:".format(self.id)
+            string = ("{:" + str(len(self.agent_ids)) + "d}:").format(self.id)
         else:
-            string = "{} | {}:".format(self.id, iter_num)
+            string = ("{:" + str(len(self.agent_ids)) + "d} | {}:").format(self.id, iter_num)
 
         if self.verbose:
             print(string, *values)

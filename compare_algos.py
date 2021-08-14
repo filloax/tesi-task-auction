@@ -2,7 +2,7 @@ import argparse
 import math
 import time
 from threading import Thread
-import sys
+import os
 
 from disropt.functions import Variable
 from disropt.problems.problem import Problem
@@ -38,6 +38,7 @@ class TestThread(Thread):
         self.result = None
 
     def run(self):
+        os.remove("log.txt")
         time_before = time.time()
         ret = self.tester.run(
             num_agents = self.num_agents, 
@@ -75,8 +76,8 @@ def do_test(num_agents: int, runs: int, verbose = False, print_iter_progress = F
 
         #CBAA
         if verbose:
-            print("Agent positions: \n{}".format({ id: agent_positions[id] for id in range(num_agents) }))
-            print("Task positions: \n{}".format({ id: task_positions[id] for id in range(num_tasks) }))
+            print("Agent positions: \n{}".format(agent_positions))
+            print("Task positions: \n{}".format(task_positions))
             print("\n\n\n\n########################\n##### Running CBAA #####\n########################\n\n\n\n")
 
         tester_cbaa = TestThread(TesterCBAA(), num_agents, agent_positions, task_positions, verbose)
@@ -225,10 +226,10 @@ def printIterationsProgress(suffix, iterations, win_bids_list, num_agents, start
         for i in range(num_agents):
             if len(win_bids_list) > i:
                 pct_done = round(min(win_bids_list[i] * 100 / required_const_bids, 100), 2)
-                # if pct_done > 50:
-                print((id_str + ": {:>6.2f}% at {}/{} completion        ").format(i, pct_done, win_bids_list[i], required_const_bids))
-                # else:
-                #     print("{}: still unstable                 ".format(i))
+                win_bids = win_bids_list[i]
+                if win_bids > required_const_bids:
+                    win_bids = str(required_const_bids) + "+"
+                print((id_str + ": {:>6.2f}% at {}/{} completion        ").format(i, pct_done, win_bids, required_const_bids))
             else:
                 print((id_str + ":                                         ").format(i, len(win_bids_list)))
     else:

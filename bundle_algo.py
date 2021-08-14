@@ -324,9 +324,9 @@ class BundleAlgorithm:
     def log(self, iter_num = None, *values):
         string = ""
         if iter_num is None:
-            string = "{}:".format(self.id)
+            string = ("{:" + str(len(self.agent_ids)) + "d}:").format(self.id)
         else:
-            string = "{} | {}:".format(self.id, iter_num)
+            string = ("{:" + str(len(self.agent_ids)) + "d} | {}:").format(self.id, iter_num)
 
         if self.log_file != '':
             with open(self.log_file, 'a') as f:

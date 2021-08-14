@@ -10,7 +10,6 @@ for n_agents in $(seq 3 2 25); do
 	echo "Testing with $n_agents agents:"
 	TMP=$(mktemp)
 	# TMP="$local_path/tmp.txt"
-	touch "$TMP"
 	python3 "$local_path/compare_algos.py" -p -N $n_agents -r 30 $* > "$TMP" &
 	compare_pid=$!
 	echo "Started with pid: $compare_pid"

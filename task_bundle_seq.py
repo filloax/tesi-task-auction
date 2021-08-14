@@ -107,7 +107,8 @@ class TesterCBBA:
                     self.const_winning_bids[id] = agents[id].win_bids_equal_cnt
 
                 self.log("Iter", self.iterations, do_console=verbose)
-                self.log(np.array([agent.winning_bids[agent.id] for agent in agents]), do_console=verbose)
+                self.log("Winning bids:", do_console=verbose)
+                self.log(np.round(np.array([agent.winning_bids[agent.id] for agent in agents]), 2), do_console=verbose)
                 self.log("-------------------", do_console=verbose)
                 self.log("Winning agents:", do_console=verbose)
                 self.log(np.array([agent.winning_agents[agent.id] for agent in agents]), do_console=verbose)
@@ -116,25 +117,26 @@ class TesterCBBA:
                 self.log("\n".join(["{}: {}".format(agent.id, agent.task_path) for agent in agents]), do_console=verbose)
                 self.log("-------------------", do_console=verbose)
                 self.log("Assigned tasks:", do_console=verbose)
-                self.log(np.array([agent.assigned_tasks for agent in agents]), do_console=verbose)
+                self.log(str(np.array([agent.assigned_tasks for agent in agents])).replace("0.", "_ "), do_console=verbose)
                 self.log("###################", do_console=verbose)
 
                 # time.sleep(0.5)
                 # input()
 
         except KeyboardInterrupt or BrokenPipeError:
-            self.log("CBBA: Keyboard interrupt, early end...")
-            self.log("CBBA: Keyboard interrupt, early end...", file=sys.stderr)
+            print("CBBA: Keyboard interrupt, early end...")
+            print("CBBA: Keyboard interrupt, early end...", file=sys.stderr)
             force_print = True
         finally:
             if not test_mode and (force_print or not silent):
                 self.log("\n\nFinal version after", self.iterations, "iterations:")
                 self.log("###################")
                 self.log("Starting from:")
-                self.log("Agent positions: \n{}".format({ id: agent_positions[id] for id in agent_ids }))
-                self.log("Task positions: \n{}".format({ id: task_positions[id] for id in tasks }))
+                self.log("Agent positions: \n{}".format(agent_positions[id] for id in agent_ids))
+                self.log("Task positions: \n{}".format(task_positions[id] for id in tasks))
                 self.log("###################")
-                self.log(np.array([agent.winning_bids[agent.id] for agent in agents]))
+                self.log("Winning bids:")
+                self.log(np.round(np.array([agent.winning_bids[agent.id] for agent in agents]), 2))
                 self.log("-------------------")
                 self.log("Winning agents:")
                 self.log(np.array([agent.winning_agents[agent.id] for agent in agents]))
@@ -143,7 +145,7 @@ class TesterCBBA:
                 self.log("\n".join(["{}: {}".format(agent.id, agent.task_path) for agent in agents]))
                 self.log("-------------------")
                 self.log("Assigned tasks:")
-                self.log(np.array([agent.assigned_tasks for agent in agents]))
+                self.log(str(np.array([agent.assigned_tasks for agent in agents])).replace("0.", "_ "))
                 self.log("###################")
 
         sol = np.array([agent.assigned_tasks for agent in agents])

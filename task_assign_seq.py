@@ -93,33 +93,33 @@ class TesterCBAA:
 
                 self.log("Iter", self.iterations, do_console=verbose)
                 self.log("Max bids:", do_console=verbose)
-                self.log(np.array([agent.max_bids[agent.id] for agent in agents]), do_console=verbose)
+                self.log(np.round(np.array([agent.max_bids[agent.id] for agent in agents]), 2), do_console=verbose)
                 self.log("-------------------", do_console=verbose)
                 self.log("Assigned tasks:", do_console=verbose)
-                self.log(np.array([agent.assigned_tasks for agent in agents]), do_console=verbose)
+                self.log(str(np.array([agent.assigned_tasks for agent in agents])).replace("0.", "_ "), do_console=verbose)
                 self.log("-------------------", do_console=verbose)
                 self.log("Bids:", do_console=verbose)
-                self.log(np.array([agent.bids for agent in agents]), do_console=verbose)
+                self.log(np.round(np.array([agent.bids for agent in agents]), 2), do_console=verbose)
                 self.log("###################", do_console=verbose)
 
                 # time.sleep(0s.05)
                 # input()
 
         except KeyboardInterrupt or BrokenPipeError:
-            self.log("CBAA: Keyboard interrupt, early end...")
-            self.log("CBAA: Keyboard interrupt, early end...", file=sys.stderr)
+            print("CBAA: Keyboard interrupt, early end...")
+            print("CBAA: Keyboard interrupt, early end...", file=sys.stderr)
             force_print = True
         finally:
             if not test_mode and (force_print or not silent):
                 self.log("Final version after", self.iterations, "self.iterations:")
                 self.log("Assigned tasks:")
-                self.log(np.array([agent.assigned_tasks for agent in agents]))
+                self.log(str(np.array([agent.assigned_tasks for agent in agents])).replace("0.", "_ "))
                 self.log("-------------------")
-                self.log("Max bids [0]:")
-                self.log(np.array([agent.max_bids[agent.id] for agent in agents]))
+                self.log("Max bids:")
+                self.log(np.round(np.array([agent.max_bids[agent.id] for agent in agents]), 3))
                 self.log("-------------------")
                 self.log("Bids:")
-                self.log(np.array([agent.bids for agent in agents]))
+                self.log(np.round(np.array([agent.bids for agent in agents]), 3))
                 self.log("###################")
 
         sol = np.array([agent.assigned_tasks for agent in agents])
