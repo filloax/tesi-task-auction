@@ -1,6 +1,8 @@
 import sys
+from utils import bids_to_string
+from task_seq_tester import TaskTester
 from bundle_algo import BundleAlgorithm, TimeScoreFunction
-from task_positions import gen_distance_calc_time_fun, generate_positions, write_positions
+from task_positions import gen_distance_calc_time_fun, generate_positions, load_positions, write_positions
 import random
 from disropt.functions import Variable
 from disropt.problems import Problem
@@ -15,21 +17,14 @@ parser = argparse.ArgumentParser(description='Distributed task assignment algori
 parser.add_argument('-N', '--agents', help="Amount of agents", required=True, type=int)
 parser.add_argument('-t', '--tasks', help="Amount of tasks", required=True, type=int)
 parser.add_argument('-L', '--agent-tasks', help="Max tasks per agent", required=True, type=int)
+parser.add_argument('--load-pos', help="Use last generated positions instead of creating new", default=False, action='store_true')
 parser.add_argument('-v', '--verbose', default=False, action='store_true')
 parser.add_argument('--test-mode', default=False, action='store_true')
 parser.add_argument('--test-runs', default=1, type=int)
 
-class TesterCBBA:
+class TesterCBBA(TaskTester):
     def __init__(self):
-        # Non impostati nel costruttore, pensato per poter essere usato più volte con
-        # dati diversi; servono principalmente a ottenerli dall'esterno nel multithreading
-        self.done_agents = 0
-        self.iterations = 0
-        self.const_winning_bids = []
-        self.log_file = ''
-
-    def get_done_status(self):
-        return (self.done_agents, self.iterations, self.const_winning_bids)
+        super().__init__()
 
     def run(self, num_agents, num_tasks = -1, max_agent_tasks = 1, verbose = False, test_mode = False, run = 0, agent_positions = None, task_positions = None, 
     silent = False, return_iterations = False, log_file=''):
@@ -107,8 +102,10 @@ class TesterCBBA:
                     self.const_winning_bids[id] = agents[id].win_bids_equal_cnt
 
                 self.log("Iter", self.iterations, do_console=verbose)
+                self.log("Bids:", do_console=verbose)
+                self.log(bids_to_string([agent.bids for agent in agents]), do_console=verbose)
                 self.log("Winning bids:", do_console=verbose)
-                self.log(np.round(np.array([agent.winning_bids[agent.id] for agent in agents]), 2), do_console=verbose)
+                self.log(bids_to_string([agent.winning_bids[agent.id] for agent in agents]), do_console=verbose)
                 self.log("-------------------", do_console=verbose)
                 self.log("Winning agents:", do_console=verbose)
                 self.log(np.array([agent.winning_agents[agent.id] for agent in agents]), do_console=verbose)
@@ -132,11 +129,11 @@ class TesterCBBA:
                 self.log("\n\nFinal version after", self.iterations, "iterations:")
                 self.log("###################")
                 self.log("Starting from:")
-                self.log("Agent positions: \n{}".format(agent_positions[id] for id in agent_ids))
-                self.log("Task positions: \n{}".format(task_positions[id] for id in tasks))
+                self.log("Agent positions: \n{}".format(agent_positions))
+                self.log("Task positions: \n{}".format(task_positions))
                 self.log("###################")
                 self.log("Winning bids:")
-                self.log(np.round(np.array([agent.winning_bids[agent.id] for agent in agents]), 2))
+                self.log(bids_to_string([agent.winning_bids[agent.id] for agent in agents]))
                 self.log("-------------------")
                 self.log("Winning agents:")
                 self.log(np.array([agent.winning_agents[agent.id] for agent in agents]))
@@ -189,13 +186,6 @@ class TesterCBBA:
         else:
             return sol
 
-    def log(self, *values, do_console=True):
-        if do_console:
-            print(*values)
-        if self.log_file != '':
-            with open(self.log_file, 'a') as f:
-                print(*values, file=f)
-
 
 if __name__ == "__main__":
     args = parser.parse_args()
@@ -214,9 +204,15 @@ if __name__ == "__main__":
     times = []
 
     for run_num in range(runs):
+        agent_positions = None
+        task_positions = None
+        if args.load_pos:
+            (agent_positions, task_positions) = load_positions()
+            print("Loaded positions")
+
         tester = TesterCBBA()
         pre_time = time.time()
-        ret = tester.run(num_agents, num_tasks, max_agent_tasks, verbose, test_mode, run_num)
+        ret = tester.run(num_agents, num_tasks, max_agent_tasks, verbose, test_mode, run_num, agent_positions=agent_positions, task_positions=task_positions)
         times.append(time.time() - pre_time)
         results.append(ret)
 

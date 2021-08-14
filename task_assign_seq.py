@@ -1,4 +1,6 @@
 import random
+from utils import bids_to_string
+from task_seq_tester import TaskTester
 from disropt.functions import Variable
 from disropt.problems import Problem
 import numpy as np
@@ -15,16 +17,10 @@ parser.add_argument('-v', '--verbose', default=False, action='store_true')
 parser.add_argument('--test-mode', default=False, action='store_true')
 parser.add_argument('--test-runs', default=1, type=int)
 
-class TesterCBAA:
+class TesterCBAA(TaskTester):
 
     def __init__(self):
-        self.done_agents = 0
-        self.iterations = 0
-        self.const_winning_bids = []
-        self.log_file = ''
-
-    def get_done_status(self):
-        return (self.done_agents, self.iterations, self.const_winning_bids)
+        super().__init__()
 
     def run(self, num_agents, verbose = False, test_mode = False, run = 0, agent_positions = None, task_positions = None, 
     silent = False, return_iterations = False, log_file=''):
@@ -93,7 +89,7 @@ class TesterCBAA:
 
                 self.log("Iter", self.iterations, do_console=verbose)
                 self.log("Max bids:", do_console=verbose)
-                self.log(np.round(np.array([agent.max_bids[agent.id] for agent in agents]), 2), do_console=verbose)
+                self.log(bids_to_string([agent.max_bids[agent.id] for agent in agents]), do_console=verbose)
                 self.log("-------------------", do_console=verbose)
                 self.log("Assigned tasks:", do_console=verbose)
                 self.log(str(np.array([agent.assigned_tasks for agent in agents])).replace("0.", "_ "), do_console=verbose)
@@ -116,10 +112,10 @@ class TesterCBAA:
                 self.log(str(np.array([agent.assigned_tasks for agent in agents])).replace("0.", "_ "))
                 self.log("-------------------")
                 self.log("Max bids:")
-                self.log(np.round(np.array([agent.max_bids[agent.id] for agent in agents]), 3))
+                self.log(bids_to_string([agent.max_bids[agent.id] for agent in agents]))
                 self.log("-------------------")
                 self.log("Bids:")
-                self.log(np.round(np.array([agent.bids for agent in agents]), 3))
+                self.log(bids_to_string([agent.bids for agent in agents]))
                 self.log("###################")
 
         sol = np.array([agent.assigned_tasks for agent in agents])
@@ -181,13 +177,6 @@ class TesterCBAA:
             return (sol, self.iterations)
         else:
             return sol
-
-    def log(self, *values, do_console=True):
-        if do_console:
-            print(*values)
-        if self.log_file != '':
-            with open(self.log_file, 'a') as f:
-                print(*values, file=f)
 
 
 if __name__ == "__main__":

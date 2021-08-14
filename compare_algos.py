@@ -12,6 +12,7 @@ from numpy.lib.function_base import average
 from task_positions import generate_positions, linear_dist, write_positions
 from task_assign_seq import TesterCBAA
 from task_bundle_seq import TesterCBBA
+from task_seq_tester import TaskTester
 
 
 parser = argparse.ArgumentParser(description='Test CBBA and CBAA.')
@@ -27,7 +28,7 @@ MOVE_TO_PREV_LINE_START = '\033[F'
 # move_up_one_line = '\033[A'
 
 class TestThread(Thread):
-    def __init__(self, tester: (TesterCBBA or TesterCBAA), num_agents, agent_positions, task_positions, verbose = False):
+    def __init__(self, tester: TaskTester, num_agents, agent_positions, task_positions, verbose = False):
         super().__init__()
 
         self.tester = tester
@@ -214,28 +215,28 @@ def printProgressBar (iteration, total, prefix = '', suffix = '', decimals = 1, 
 def printIterationsProgress(suffix, iterations, win_bids_list, num_agents, start = False, go_back_only = False):
     required_const_bids = num_agents * 2 + 1
     if not start:
-        print(MOVE_TO_PREV_LINE_START * (num_agents + 2))
+        print(MOVE_TO_PREV_LINE_START * (num_agents + 2), flush=True)
     else:
-        print()
+        print(flush=True)
 
     id_len = len(str(num_agents))
     id_str = "{:" + str(id_len) + "d}"
 
     if not go_back_only:
-        print("Iteration #{:5d} | {}                   ".format(iterations, suffix))
+        print("Iteration #{:5d} | {}                   ".format(iterations, suffix), flush=True)
         for i in range(num_agents):
             if len(win_bids_list) > i:
                 pct_done = round(min(win_bids_list[i] * 100 / required_const_bids, 100), 2)
                 win_bids = win_bids_list[i]
                 if win_bids > required_const_bids:
                     win_bids = str(required_const_bids) + "+"
-                print((id_str + ": {:>6.2f}% at {}/{} completion        ").format(i, pct_done, win_bids, required_const_bids))
+                print((id_str + ": {:>6.2f}% at {}/{} completion        ").format(i, pct_done, win_bids, required_const_bids), flush=True)
             else:
-                print((id_str + ":                                         ").format(i, len(win_bids_list)))
+                print((id_str + ":                                         ").format(i, len(win_bids_list)), flush=True)
     else:
         for i in range(num_agents + 1):
-            print("                                                       ")
-        print(MOVE_TO_PREV_LINE_START * (num_agents + 3))
+            print("                                                       ", flush=True)
+        print(MOVE_TO_PREV_LINE_START * (num_agents + 3), flush=True)
 
 def main(agent_nums_to_test: list, runs: int, verbose = False, print_iter_progress = False, prog_update_time = 0.5):
     if len(agent_nums_to_test) == 0:
