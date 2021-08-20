@@ -3,7 +3,10 @@ import random
 import numpy as np
 from disropt.agents import Agent
 from numpy.lib.function_base import average
-from utils import *
+try:
+    from utils import *
+except ImportError:
+    from .utils import *
 
 class AuctionAlgorithm:
     def __init__(self, id, bids, agent: Agent, tasks, agent_ids, verbose = False, log_file = ''):
@@ -178,7 +181,7 @@ class AuctionAlgorithm:
         return bid1 == bid2
 
     def _ignores_task(self, task):
-        return False
+        return self.bids[task] == 0
 
     def __repr__(self):
         return str(self.__dict__)

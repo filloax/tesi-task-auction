@@ -8,7 +8,7 @@ from mpi4py import MPI
 from disropt.agents import Agent
 
 import argparse
-from gen_task_bundle_positions import load_positions
+from task_positions import load_positions
 
 start_time = time.time()
 
@@ -48,7 +48,7 @@ def main():
     agent = Agent(in_neighbors=neighbors,
                 out_neighbors=neighbors)
 
-    (task_positions, agent_positions) = load_positions(agent_pos_path, task_pos_path)
+    (agent_positions, task_positions) = load_positions(agent_pos_path, task_pos_path)
 
     if len(agent_positions) != num_agents:
         raise ValueError("Number of agent positions wrong: {}, should be {}".format(len(agent_positions), num_agents))
@@ -75,7 +75,7 @@ def main():
 
     task_agent.run(incr_runs)
 
-    lprint("{}: Done in {:.2f}s, {} iterations".format(local_rank, time.time() - start_time, runs), file=sys.stderr)
+    lprint("Done in {:.2f}s, {} iterations".format(time.time() - start_time, runs), file=sys.stderr)
 
     if verbose:
         result = ""
@@ -92,15 +92,20 @@ def main():
         result += str("Assigned tasks:") + '\n'
         result += str(task_agent.assigned_tasks) + '\n'
         result += str("###################") + '\n'
-        lprint(result)
+
+        formattedresult = ""
+        for line in result.split("\n"):
+            formattedresult = formattedresult + "{} | {}: ".format(local_rank, runs) + line + "\n"
+
+        print(formattedresult)
     else:
-        lprint("{}:{}".format(task_agent.id, " ".join(map(lambda x: str(int(x)), task_agent.assigned_tasks))))
+        lprint(" ".join(map(lambda x: str(int(x)), task_agent.assigned_tasks)))
 
 def linear_dist(pos1, pos2):
     return np.sqrt(np.sum((pos1 - pos2) ** 2))
 
 def lprint(*arg, file=sys.stdout):
-    print(local_rank, "#{}".format(runs), *arg, file=file)
+    print("{} | {}: ".format(local_rank, runs), *arg, file=file)
 
 def incr_runs():
     global runs

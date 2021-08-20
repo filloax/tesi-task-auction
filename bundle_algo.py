@@ -1,7 +1,10 @@
 import numpy as np
 from disropt.agents import Agent
 import time
-from utils import *
+try:
+    from utils import *
+except ImportError:
+    from .utils import *
 
 class ScoreFunction:
     def __init__(self, agent_id: int):
