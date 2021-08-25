@@ -1,3 +1,4 @@
+import math
 import numpy as np
 from disropt.agents import Agent
 import time
@@ -21,6 +22,10 @@ class ScoreFunction:
 
 class BundleAlgorithm:
     def __init__(self, id, agent: Agent, score_function: ScoreFunction, tasks, max_agent_tasks, agent_ids, verbose = False, log_file = ''):
+        if max_agent_tasks < math.ceil(len(tasks) / len(agent_ids)):
+            raise ValueError("max_agent_tasks not big enough for passed task and agent list: must be at least {} for t={} & N={}"
+                .format(math.ceil(len(tasks) / len(agent_ids)), len(tasks), len(agent_ids)))
+
         self.id = id
         self.agent = agent
         # Funzione S(path, agent)
@@ -58,48 +63,46 @@ class BundleAlgorithm:
             # Questo è c_{ij}, la funzione di costo (o meglio, guadagno)
             # consiste in quanto l'aggiunta di un dato task sia in grado
             # di aumentare il punteggio del percorso
-            self.bids = np.array([self.get_task_gain(task) if not self._ignores_task(task) else 0 for task in self.tasks])
+            self.bids = np.array([self.calc_task_bid(task) for task in self.tasks])
 
-            # Uso di dict per non considerare task non validi o già aggiunti
-            task_score_improvements = { task: self.bids[task] for task in self.tasks 
-                    if task not in self.task_bundle and not self._ignores_task(task) }
-
-            if any(task_score_improvements[task] < 0 for task in task_score_improvements):
+            if any(bid < 0 for bid in self.bids):
                 raise ValueError("Got negative score improvement in CBBA. Negative values are not supported, if you need to find a minimum instead of a maximum you can usually use 1/x, 0.y^x or similar somewhere in the score function.")
 
             selected_task = -1
 
-            self.log_verbose(iter_num, "task_score_improvements: {}".format(bids_to_string([bid if task in task_score_improvements else 0 for (task, bid) in enumerate(self.bids)])))
+            self.log_verbose(iter_num, "self.bids: {}".format(bids_to_string([bid if task in self.bids else 0 for (task, bid) in enumerate(self.bids)])))
 
-            if any(task in task_score_improvements and self._bid_is_greater(task_score_improvements[task], self.winning_bids[self.id][task], self.id, self.winning_agents[self.id][task]) for task in self.tasks):
-                max_score_improvement = max(task_score_improvements[task] for task in task_score_improvements if self._bid_is_greater(task_score_improvements[task], self.winning_bids[self.id][task], self.id, self.winning_agents[self.id][task]))
+            if any(self.bids[task] > 0 and self._bid_is_greater(self.bids[task], self.winning_bids[self.id][task], self.id, self.winning_agents[self.id][task]) for task in self.tasks):
+                max_score_improvement = max(self.bids[task] for task in self.tasks if self.bids[task] > 0 and self._bid_is_greater(self.bids[task], self.winning_bids[self.id][task], self.id, self.winning_agents[self.id][task]))
                 
                 selected_task = next(task for task in self.tasks if 
-                    task in task_score_improvements 
-                    and task_score_improvements[task] == max_score_improvement 
+                    task in self.bids 
+                    and self.bids[task] == max_score_improvement 
                     # Controlla di nuovo per evitare scelta sbagliata nel caso ci siano task con lo stesso valore ma alcuni già presi da altri
-                    and self._bid_is_greater(task_score_improvements[task], self.winning_bids[self.id][task], self.id, self.winning_agents[self.id][task]))
+                    and self._bid_is_greater(self.bids[task], self.winning_bids[self.id][task], self.id, self.winning_agents[self.id][task]))
 
             if selected_task < 0:
                 self.log_verbose(iter_num, "Out of tasks".format(self.id, iter_num))
                 break
 
-            self.log_verbose(iter_num, "Selected task {}\tbid is {} > {}".format(selected_task, round(task_score_improvements[selected_task], 3), round(self.winning_bids[self.id][selected_task], 3)))
+            self.log_verbose(iter_num, "Selected task {}\tbid is {} > {}".format(selected_task, round(self.bids[selected_task], 3), round(self.winning_bids[self.id][selected_task], 3)))
 
             task_position = 0
             if len(self.task_path) > 0:
-                task_position = find_max_index(self.score_function.eval(insert_in_list(self.task_path, n, selected_task)) for n in range(len(self.task_path)))[0]
+                task_position = find_max_index(self.score_function.eval(insert_in_list(self.task_path, n, selected_task)) for n in range(len(self.task_path)))
 
             self.assigned_tasks[selected_task] = 1
             self.task_bundle.append(selected_task)
             self.task_path.insert(task_position + 1, selected_task)
-            self.winning_bids[self.id][selected_task] = task_score_improvements[selected_task]
+            self.winning_bids[self.id][selected_task] = self.bids[selected_task]
             self.winning_agents[self.id][selected_task] = self.id
         self.log_verbose(iter_num, "Phase end path: {}".format(self.task_path))
         
     # Per calcolare c_{ij} nell'algoritmo
-    def get_task_gain(self, task):
-        if task in self.task_bundle:
+    # Calcola il massimo aumento di punteggio che si può ottenere da un task, 
+    # controllando le varie posizione nel percorso in cui può essere inserito
+    def calc_task_bid(self, task):
+        if task in self.task_bundle or self._ignores_task(task):
             return 0
         else:
             start_score = self.score_function.eval(self.task_path)
@@ -350,7 +353,7 @@ class BundleAlgorithm:
             print(string, *values)
         if self.log_file != '':
             with open(self.log_file, 'a') as f:
-                print(string, *values, file=f)
+                print(string, *values, file=f, flush=False)
 
 class TimeScoreFunction(ScoreFunction):
     """

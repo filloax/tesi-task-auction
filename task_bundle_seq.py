@@ -1,3 +1,6 @@
+from ast import Num
+import itertools
+import math
 import sys
 from utils import bids_to_string, sol_to_string
 from task_seq_tester import TaskTester
@@ -19,7 +22,9 @@ parser.add_argument('-t', '--tasks', help="Amount of tasks", required=True, type
 parser.add_argument('-L', '--agent-tasks', help="Max tasks per agent", required=True, type=int)
 parser.add_argument('--load-pos', help="Use last generated positions instead of creating new", default=False, action='store_true')
 parser.add_argument('-v', '--verbose', default=False, action='store_true')
-parser.add_argument('--test-mode', default='', type=str)
+parser.add_argument('--log', default='', type=str, help='Log file path to print verbose output to (doesn\'t need -v)')
+parser.add_argument('--test-mode', default='', type=str, help="conflict: check conflicts, test: check efficiency")
+parser.add_argument('--test-runs', help="Do a run for each combination of N, t, L up to the amount specified", default=False, action='store_true')
 parser.add_argument('-r', '--runs', default=1, type=int)
 
 class TesterCBBA(TaskTester):
@@ -50,7 +55,8 @@ class TesterCBBA(TaskTester):
         
         if agent_positions is None or task_positions is None:
             (agent_positions, task_positions) = generate_positions(num_agents, num_tasks)
-            write_positions(agent_positions, task_positions)
+            if not silent:
+                write_positions(agent_positions, task_positions)
 
         # Inizializza dati degli agenti
         agents = [BundleAlgorithm(id, 
@@ -128,12 +134,13 @@ class TesterCBBA(TaskTester):
             print("CBBA: Keyboard interrupt, early end...", file=sys.stderr)
             force_print = True
         finally:
-            if not test_mode and (force_print or not silent):
+            if force_print or not silent:
                 self.log("\n\nFinal version after", self.iterations, "iterations:")
                 self.log("###################")
                 self.log("Starting from:")
                 self.log("Agent positions: \n{}".format(agent_positions))
                 self.log("Task positions: \n{}".format(task_positions))
+                self.log("L: {}".format(max_agent_tasks))
                 self.log("###################")
                 self.log("Winning bids:")
                 self.log(bids_to_string([agent.winning_bids[agent.id] for agent in agents]))
@@ -157,12 +164,29 @@ class TesterCBBA(TaskTester):
         self.last_solution = sol
 
         if test_mode:
+            self.log("\nControllo efficienza tramite Disropt", do_console=not silent)
+
             x = Variable(num_agents * num_tasks)
 
-            #TODO
-            c = np.ones((num_agents, num_tasks))
+            # Calcolo centralizzato di c_{ij}
+            # Per ogni agente i, le offerte poste su ogni task sono il massimo guadagno possibile che può 
+            # ottenere da quel task, controllando ogni combinazione possibile di path
+            c = np.zeros((num_agents, num_tasks))
 
-            # iterations bid rappresentano la funzione di costo del problema di ottimizzazione
+            self.log("\nCalcolo c [N: {} / t: {}]:".format(num_agents, num_tasks), do_console=not silent)
+
+            for i in agent_ids:
+                score_fun = TimeScoreFunction(i, [0.9 for task in tasks], gen_distance_calc_time_fun(agent_positions, task_positions))
+                for j in tasks:
+                    tasks_except_this = tasks.copy()
+                    tasks_except_this.remove(j)
+                    # Iteratore per ogni percorso possibile che non includa questo task
+                    all_paths_iter = itertools.chain(*(itertools.permutations(tasks_except_this, l) for l in range(max_agent_tasks)))
+                    task_gain = max(get_task_gain(j, list(task_path), score_fun) for task_path in all_paths_iter)
+                    c[i, j] = task_gain
+                self.log(bids_to_string(c[i]), do_console=not silent)
+
+            # # iterations bid rappresentano la funzione di costo del problema di ottimizzazione
             # NEGATO visto che nel nostro caso bisogna massimizzare iterations valori, mentre
             # Problem di Disropt trova iterations minimi
             bids_line = - np.reshape(c, (num_agents * num_tasks, 1))
@@ -181,20 +205,50 @@ class TesterCBBA(TaskTester):
                 # Non assegnati più di max_agent_tasks task allo stesso agent
                 sel_agents.T @ x <= np.ones((num_agents, 1)) * max_agent_tasks, 
                 # Non assegnati più o meno task del possibile in totale
-                np.ones((num_agents * num_agents, 1)) @ x == num_agents,
+                np.ones((num_agents * num_tasks, 1)) @ x == num_tasks,
                 # X appartiene a 0 o 1
-                x >= np.zeros((num_agents * num_agents, 1)),
-                x <= np.ones((num_agents * num_agents, 1)),
+                x >= np.zeros((num_agents * num_tasks, 1)),
+                x <= np.ones((num_agents * num_tasks, 1)),
             ]
 
             problem = Problem(obj_function, constraints)
             check_sol_line = problem.solve()
+            check_sol = np.reshape(check_sol_line, (num_agents, num_tasks))
+
+            self.log("X (Disropt):", do_console=not silent)
+            self.log(sol_to_string(sol=check_sol), do_console=not silent)
+
+            sol_line = np.reshape(sol, (num_agents * num_tasks, 1))
+
+            cx = float(-bids_line.T @ sol_line)
+            cx_check = float(-bids_line.T @ check_sol_line)
+            pct_diff = (cx_check - cx) * 100 / cx_check
+
+            self.log("c*x (CBBA): {}".format(cx), do_console=not silent)
+            self.log("c*x (Disropt): {}".format(cx_check), do_console=not silent)
+            self.log("Diff: {}%".format(pct_diff), do_console=not silent)
+
+            return (sol, self.iterations, cx, cx_check, pct_diff)
 
         if return_iterations:
             return (sol, self.iterations)
         else:
             return sol
 
+# Usato per il calcolo centralizzato di c_{ij} per il controllo
+# con Disropt
+def get_task_gain(task, task_path, score_function):
+    if task in task_path:
+        return 0
+    else:
+        start_score = score_function.eval(task_path)
+        if len(task_path) > 0:
+            return max(score_function.eval(insert_in_list(task_path, n, task)) for n in range(len(task_path))) - start_score
+        else:
+            return score_function.eval([task]) - start_score
+
+def insert_in_list(lst, pos, val):
+    return lst[:pos + 1] + [val] + lst[pos + 1:]
 
 if __name__ == "__main__":
     args = parser.parse_args()
@@ -202,19 +256,31 @@ if __name__ == "__main__":
     num_agents = args.agents
     num_tasks = args.tasks
     max_agent_tasks = args.agent_tasks
+
+    if max_agent_tasks < math.ceil(num_tasks / num_agents):
+        print("L non sufficiente! Con questi N e t deve essere almeno {}".format(math.ceil(num_tasks / num_agents)))
+        exit(-1)
+
     verbose = args.verbose
     test_mode = args.test_mode
     runs = args.runs
+    do_test_runs = args.test_runs
+    log_file = args.log
+    silent = False
 
-    if test_mode == 'test':
-        print("run,c * x (disropt),c * x (own), diff, diff %")
+    if test_mode == 'test' and (runs > 1 or do_test_runs):
+        if do_test_runs:
+            print("run;agent num;task num;L_t;c * x (disropt);c * x (own);diff %;time (ms)")
+        else:
+            print("run;c * x (disropt);c * x (own);diff %;time (ms)")
+        silent = True
 
     results = []
     times = []
 
-    silent = test_mode == 'conflict'
+    silent = silent or test_mode == 'conflict'
 
-    for run_num in range(runs):
+    def do_run(run_id, N, t, L):
         agent_positions = None
         task_positions = None
         if args.load_pos:
@@ -224,17 +290,43 @@ if __name__ == "__main__":
 
         tester = TesterCBBA()
         pre_time = time.time()
-        ret = tester.run(num_agents, num_tasks, max_agent_tasks, verbose, test_mode == 'test', run_num, agent_positions=agent_positions, task_positions=task_positions, silent=silent)
-        times.append(time.time() - pre_time)
+        ret = tester.run(N, t, L, verbose, test_mode == 'test', run_id, agent_positions=agent_positions, task_positions=task_positions, silent=silent, log_file=log_file)
+        tim = time.time() - pre_time
+        times.append(tim)
         results.append(ret)
 
         if test_mode == 'conflict':
             if tester.has_conflicts(ret):
                 print("FOUND CONFLICTS!")
-                print("Run: {}".format(run_num))
-                print("num_agents: {} num_tasks: {} L: {}")
+                print("Run: {}".format(run_id))
+                print("num_agents: {} num_tasks: {} L: {}".format(N, t, L))
                 print("sol:\n{}".format(sol_to_string(sol=ret)))
-                break
+                return True
+        elif test_mode == 'test' and runs > 1 or do_test_runs:
+            print("{};{};{};{};{}".format(run_id, round(ret[3], 2), round(ret[2], 2), round(ret[4], 2), math.floor(tim * 1000)), flush=True)
+
+        return False
+
+    if do_test_runs:
+        for N in range(3, num_agents + 1):
+            for t in range(3, num_tasks + 1):
+                for L in range(math.ceil(t / N), max(max_agent_tasks, math.ceil(t / N)) + 1):
+                    for run_num in range(runs):
+                        do_run("{};{};{};{}".format(run_num, N, t, L), N, t, L)
+    else:
+        for run_num in range(runs):
+            do_run(run_num, num_agents, num_tasks, max_agent_tasks)
+
+    if test_mode == 'test' and (runs > 1 or do_test_runs):
+        avg_cx = round(average(list(ret[2] for ret in results)), 2)
+        avg_cx_check = round(average(list(ret[3] for ret in results)), 2)
+        avg_diff = round(average(list(ret[4] for ret in results)), 2)
+        avg_time = math.floor(average(times) * 1000)
+
+        if do_test_runs:
+            print("{0};{0};{0};{0};{1};{2};{3};{4}".format("avg", avg_cx_check, avg_cx, avg_diff,avg_time))
+        else:
+            print("{};{};{};{};{}".format("avg", avg_cx_check, avg_cx, avg_diff, avg_time))
 
     if test_mode == 'conflict':
         print("No conflicts found in {} runs".format(runs))
