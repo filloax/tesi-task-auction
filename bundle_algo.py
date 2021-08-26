@@ -21,36 +21,46 @@ class ScoreFunction:
         pass
 
 class BundleAlgorithm:
-    def __init__(self, id, agent: Agent, score_function: ScoreFunction, tasks, max_agent_tasks, agent_ids, verbose = False, log_file = '',
-        reset_path_on_bundle_change = True):
-        if max_agent_tasks < math.ceil(len(tasks) / len(agent_ids)):
-            raise ValueError("max_agent_tasks not big enough for passed task and agent list: must be at least {} for t={} & N={}"
-                .format(math.ceil(len(tasks) / len(agent_ids)), len(tasks), len(agent_ids)))
+    def __init__(self, id, agent: Agent, score_function: ScoreFunction, tasks: list, max_agent_tasks: int, agent_ids: list, 
+        verbose = False, log_file = '',
+        reset_path_on_bundle_change = True, valid_tasks: list = None):
 
         self.id = id
         self.agent = agent
+
         # Funzione S(path, agent)
         self.score_function = score_function
+
         self.max_agent_tasks = max_agent_tasks
         self.tasks = tasks
+        if valid_tasks != None:
+            self.valid_tasks = valid_tasks
+        else:
+            # I task noti inizialmente sono considerati come quelli validi se non specificato
+            self.valid_tasks = tasks.copy()
+        # Nel caso in cui non tutti i task siano noti a priori, questo numero può venire aggiornato
+        # include i task non noti (ipotizzando che se esiste task n, esistono tutti i task <= n)
+        self.num_tasks = max(tasks) + 1
         self.agent_ids = agent_ids
+        self.num_agents = max(agent_ids) + 1
+
         self.verbose = verbose
         self.log_file = log_file
 
         self.task_bundle = []
         self.task_path = []
-        self.assigned_tasks = np.zeros(len(self.tasks))
+        self.assigned_tasks = np.zeros(self.num_tasks)
 
         # Da testing, questa opzione talvolta migliora leggermente l'ottimizzazione, a leggero discapito della performance in durata
         self.reset_path_on_bundle_change = reset_path_on_bundle_change
 
-        self.bids = np.zeros(len(self.tasks)) # Usato solo per debug, impostati in fase di costruzione
-        self.winning_bids = np.zeros((len(self.agent_ids), len(self.tasks)))
-        self.winning_agents = -np.ones((len(self.agent_ids), len(self.tasks)))
-        self.prev_win_bids = np.zeros(len(self.tasks))
+        self.bids = np.zeros(self.num_tasks) # Usato solo per debug, impostati in fase di costruzione
+        self.winning_bids = np.zeros((self.num_agents, self.num_tasks))
+        self.winning_agents = -np.ones((self.num_agents, self.num_tasks))
+        self.prev_win_bids = np.zeros(self.num_tasks)
         self.win_bids_equal_cnt = 0
 
-        self.message_times = np.zeros((len(self.agent_ids), len(self.agent_ids)))
+        self.message_times = np.zeros((self.num_agents, self.num_agents))
         self.changed_ids = []
 
         self.done = False
@@ -255,12 +265,13 @@ class BundleAlgorithm:
             self.log_verbose(iter_num, "win_bids_equal_cnt: {}".format(self.win_bids_equal_cnt))
 
         # Numero di iterazioni senza alterazioni nello stato rilevante per considerare l'operazione finita
-        num_stable_runs = 2 * len(self.agent_ids) * self.max_agent_tasks + 1
-        # Se tutti i bid massimi sono stati ricevuti, ignorando quelli per i task che questo agente
-        # sta ignorando (vale a dire quelle per cui ha messo bid 0)
-        all_max_bids_set = all(self.winning_bids[self.id][task] != 0 for task in self.tasks if not self._ignores_task(task))
+        num_stable_runs = 2 * self.num_agents * self.max_agent_tasks + 1
+        # Se sono stati impostati abbastanza bid per i task non ignorati
+        # abbastanza = min(Nu * Lt, Nt)
+        num_max_bids_set = sum(1 for task in self.tasks if not self._ignores_task(task) and self.winning_bids[self.id][task] != 0)
+        enough_max_bids_set = num_max_bids_set >= min(self.num_tasks, self.num_agents * self.max_agent_tasks)
 
-        return sum(self.assigned_tasks) <= self.max_agent_tasks and all_max_bids_set and self.win_bids_equal_cnt >= num_stable_runs
+        return sum(self.assigned_tasks) <= self.max_agent_tasks and enough_max_bids_set and self.win_bids_equal_cnt >= num_stable_runs
 
     def run_iter(self, iter_num = "."):
         self.construct_phase(iter_num)
@@ -344,7 +355,7 @@ class BundleAlgorithm:
         return bid1 > bid2
 
     def _ignores_task(self, task):
-        return False
+        return task not in self.valid_tasks
 
     def __repr__(self):
         return str(self.__dict__)
@@ -352,9 +363,9 @@ class BundleAlgorithm:
     def log(self, iter_num = None, *values):
         string = ""
         if iter_num is None:
-            string = ("{:" + str(len(self.agent_ids)) + "d}:").format(self.id)
+            string = ("{:" + str(self.num_agents) + "d}:").format(self.id)
         else:
-            string = ("{:" + str(len(self.agent_ids)) + "d} | {}:").format(self.id, iter_num)
+            string = ("{:" + str(self.num_agents) + "d} | {}:").format(self.id, iter_num)
 
         if self.log_file != '':
             with open(self.log_file, 'a') as f:

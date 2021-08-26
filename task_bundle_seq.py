@@ -262,10 +262,6 @@ if __name__ == "__main__":
     num_tasks = args.tasks
     max_agent_tasks = args.agent_tasks
 
-    if max_agent_tasks < math.ceil(num_tasks / num_agents):
-        print("L non sufficiente! Con questi N e t deve essere almeno {}".format(math.ceil(num_tasks / num_agents)))
-        exit(-1)
-
     verbose = args.verbose
     test_mode = args.test_mode
     runs = args.runs
