@@ -69,6 +69,8 @@ class TesterCBBA(TaskTester):
             log_file = log_file,
             ) for id in agent_ids]
 
+        self.agents = agents # for external access
+
         self.iterations = 0
         self.const_winning_bids = [0 for agent in agents]
         force_print = False
@@ -135,6 +137,8 @@ class TesterCBBA(TaskTester):
             force_print = True
         finally:
             if force_print or not silent:
+                sol = np.array([agent.assigned_tasks for agent in agents])
+
                 self.log("\n\nFinal version after", self.iterations, "iterations:")
                 self.log("###################")
                 self.log("Starting from:")

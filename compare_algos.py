@@ -5,7 +5,7 @@ import time
 from threading import Thread
 import os
 from typing import Iterator
-from utils import sol_to_string
+from utils import bids_to_string, sol_to_string
 
 from disropt.functions import Variable
 from disropt.problems.problem import Problem
@@ -129,7 +129,7 @@ def do_test(num_agents: int, runs: int, verbose = False, print_iter_progress = F
 
         x = Variable(num_agents * num_agents)
 
-        c = np.array([[linear_dist(agent_positions[agent], task_positions[task]) for task in range(num_tasks)] for agent in range(num_agents)])
+        c = np.array([[0.9 ** linear_dist(agent_positions[agent], task_positions[task]) for task in range(num_tasks)] for agent in range(num_agents)])
         c_line = -np.reshape(c, (num_agents * num_tasks, 1))
 
         obj_function = c_line @ x
@@ -159,9 +159,13 @@ def do_test(num_agents: int, runs: int, verbose = False, print_iter_progress = F
         cx_cbba = float(-c_line.T @ np.reshape(sol_cbba, (num_agents * num_tasks, 1)))
 
         if runs == 1:
-            print("Optimized tasks:\n{}".format(check_sol))
-            print("CBAA assigned tasks:\n{}".format(sol_cbaa))
-            print("CBBA assigned tasks:\n{}".format(sol_cbba))
+            print("Centralized bids:\n{}".format(bids_to_string(c)))
+            print("CBAA bids:\n{}".format(bids_to_string(np.array([agent.bids for agent in tester_cbaa.tester.agents]))))
+            print("CBBA bids:\n{}".format(bids_to_string(np.array([agent.bids for agent in tester_cbba.tester.agents]))))
+
+            print("Optimized tasks:\n{}".format(sol_to_string(sol=check_sol)))
+            print("CBAA assigned tasks:\n{}".format(sol_to_string(sol=sol_cbaa)))
+            print("CBBA assigned tasks:\n{}".format(sol_to_string(sol=sol_cbba)))
 
             if tester_cbaa.tester.has_conflicts(sol_cbaa):
                 print("WARNING: CBAA solution has conflicts!")
@@ -189,13 +193,13 @@ def do_test(num_agents: int, runs: int, verbose = False, print_iter_progress = F
         print("Avg. Optimized\tc * x: {}".format(round(cx_dis_avg, 2)))
         print("Avg. CBAA\tc * x: {}\tdiff: {}%\ttime: {}ms\titerations: {}".format(
             round(cx_cbaa_avg, 2), 
-            round(100 * (cx_dis_avg- cx_cbaa_avg) / cx_dis_avg, 2), 
+            round(100 * (cx_dis_avg - cx_cbaa_avg) / cx_dis_avg, 2), 
             math.floor(time_cbaa_avg * 1000),
             round(iterations_cbaa_avg, 2)),
             )
         print("Avg. CBBA\tc * x: {}\tdiff: {}%\ttime: {}ms\titerations: {}".format(
             round(cx_cbba_avg, 2), 
-            round(100 * (cx_dis_avg- cx_cbba_avg) / cx_dis_avg, 2), 
+            round(100 * (cx_dis_avg - cx_cbba_avg) / cx_dis_avg, 2), 
             math.floor(time_cbba_avg * 1000),
             round(iterations_cbba_avg, 2)),
             )

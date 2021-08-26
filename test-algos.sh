@@ -6,11 +6,11 @@ echo "agents num,avg CBAA opt diff(%),avg CBBA opt diff(%),avg CBAA time(ms),avg
 
 local_path=$(realpath .)
 
-for n_agents in $(seq 3 2 25); do
+for n_agents in $(seq 3 2 21); do
 	echo "Testing with $n_agents agents:"
 	TMP=$(mktemp)
 	# TMP="$local_path/tmp.txt"
-	python3 "$local_path/compare_algos.py" -p -T 0.1 -N $n_agents -r 30 $* > "$TMP" &
+	python3 "$local_path/compare_algos.py" -p -T 0.1 -N $n_agents -r 20 $* > "$TMP" &
 	compare_pid=$!
 	echo "Started with pid: $compare_pid"
 	tail -f -n +0 "$TMP" &

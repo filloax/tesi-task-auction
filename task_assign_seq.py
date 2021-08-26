@@ -44,10 +44,9 @@ class TesterCBAA(TaskTester):
             (agent_positions, task_positions) = generate_positions(num_agents, num_tasks)
             write_positions(agent_positions, task_positions)
 
-        bids = np.array([[linear_dist(agent_positions[agent], task_positions[task]) for task in tasks] for agent in agent_ids])
+        bids = np.array([[0.9 ** linear_dist(agent_positions[agent], task_positions[task]) for task in tasks] for agent in agent_ids])
 
         # Inizializza dati degli agenti
-        agents = [AuctionAlgorithm(id, bids[id], None, tasks, agent_ids, verbose) for id in agent_ids]
         agents = [AuctionAlgorithm(id, 
             bids = bids[id],
             agent = None, 
@@ -56,6 +55,8 @@ class TesterCBAA(TaskTester):
             verbose = verbose,
             log_file = log_file,
             ) for id in agent_ids]
+
+        self.agents = agents # for external access
 
         self.iterations = 0
         self.const_winning_bids = [0 for agent in agents]
