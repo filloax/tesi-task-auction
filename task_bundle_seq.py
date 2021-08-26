@@ -35,7 +35,7 @@ class TesterCBBA(TaskTester):
     silent = False, return_iterations = False, log_file=''):
         if num_tasks < 0:
             num_tasks = num_agents
-            
+
         self.log_file = log_file
 
         agent_ids = list(range(num_agents))
@@ -52,7 +52,7 @@ class TesterCBBA(TaskTester):
         
         # Diverso da CBAA: simula il caso specifico delle posizioni per dare un senso
         # alla generazione di un percorso, quindi non si limita a semplici bid casuali
-        
+    
         if agent_positions is None or task_positions is None:
             (agent_positions, task_positions) = generate_positions(num_agents, num_tasks)
             if not silent:
@@ -67,6 +67,7 @@ class TesterCBBA(TaskTester):
             agent_ids = agent_ids, 
             verbose = verbose,
             log_file = log_file,
+            reset_path_on_bundle_change=True
             ) for id in agent_ids]
 
         self.agents = agents # for external access

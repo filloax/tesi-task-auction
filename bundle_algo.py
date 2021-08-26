@@ -21,7 +21,8 @@ class ScoreFunction:
         pass
 
 class BundleAlgorithm:
-    def __init__(self, id, agent: Agent, score_function: ScoreFunction, tasks, max_agent_tasks, agent_ids, verbose = False, log_file = ''):
+    def __init__(self, id, agent: Agent, score_function: ScoreFunction, tasks, max_agent_tasks, agent_ids, verbose = False, log_file = '',
+        reset_path_on_bundle_change = True):
         if max_agent_tasks < math.ceil(len(tasks) / len(agent_ids)):
             raise ValueError("max_agent_tasks not big enough for passed task and agent list: must be at least {} for t={} & N={}"
                 .format(math.ceil(len(tasks) / len(agent_ids)), len(tasks), len(agent_ids)))
@@ -39,6 +40,9 @@ class BundleAlgorithm:
         self.task_bundle = []
         self.task_path = []
         self.assigned_tasks = np.zeros(len(self.tasks))
+
+        # Da testing, questa opzione talvolta migliora leggermente l'ottimizzazione, a leggero discapito della performance in durata
+        self.reset_path_on_bundle_change = reset_path_on_bundle_change
 
         self.bids = np.zeros(len(self.tasks)) # Usato solo per debug, impostati in fase di costruzione
         self.winning_bids = np.zeros((len(self.agent_ids), len(self.tasks)))
@@ -59,6 +63,20 @@ class BundleAlgorithm:
     def construct_phase(self, iter_num="."):
         self.log_verbose(iter_num, "pre construct bundle: {} path: {}".format(self.task_bundle, self.task_path))
 
+        # Task rimosso all'ultima risoluzione conflitti,
+        # ricalcola il path per avere una migliore ottimizzazione
+        if len(self.task_bundle) > 0 and len(self.task_path) == 0:
+            for task in self.task_bundle:
+                task_position = 0
+                if len(self.task_path) > 0:
+                    task_position = find_max_index(self.score_function.eval(insert_in_list(self.task_path, n, task)) for n in range(len(self.task_path)))
+                self.task_path.insert(task_position, task)
+
+            self.log_verbose(iter_num, "reconstructed path: {} (from bundle {})".format(self.task_path, self.task_bundle))
+
+        elif len(self.task_bundle) != len(self.task_path):
+            raise RuntimeError("Bundle and path lengths mismatch but path was not reset: b {} p {}".format(self.task_bundle, self.task_path))
+
         while len(self.task_bundle) < self.max_agent_tasks:
             # Questo è c_{ij}, la funzione di costo (o meglio, guadagno)
             # consiste in quanto l'aggiunta di un dato task sia in grado
@@ -75,9 +93,7 @@ class BundleAlgorithm:
             if any(self.bids[task] > 0 and self._bid_is_greater(self.bids[task], self.winning_bids[self.id][task], self.id, self.winning_agents[self.id][task]) for task in self.tasks):
                 max_score_improvement = max(self.bids[task] for task in self.tasks if self.bids[task] > 0 and self._bid_is_greater(self.bids[task], self.winning_bids[self.id][task], self.id, self.winning_agents[self.id][task]))
                 
-                selected_task = next(task for task in self.tasks if 
-                    task in self.bids 
-                    and self.bids[task] == max_score_improvement 
+                selected_task = next(task for task in self.tasks if self.bids[task] == max_score_improvement 
                     # Controlla di nuovo per evitare scelta sbagliata nel caso ci siano task con lo stesso valore ma alcuni già presi da altri
                     and self._bid_is_greater(self.bids[task], self.winning_bids[self.id][task], self.id, self.winning_agents[self.id][task]))
 
@@ -222,7 +238,10 @@ class BundleAlgorithm:
 
             for i in range(start_idx, len(self.task_bundle)):
                 task2 = self.task_bundle.pop()
-                self.task_path.remove(task2)
+                if self.reset_path_on_bundle_change:
+                    self.task_path = [] # Ricalcola per mantenere ottimizzazione
+                else:
+                    self.task_path.remove(task2)
                 self.assigned_tasks[task2] = 0
 
     def check_done(self, iter_num="."):
