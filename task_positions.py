@@ -84,8 +84,11 @@ def load_positions(agent_pos_path = DEFAULT_AGENT_FILE, task_pos_path = DEFAULT_
 
     return (agent_positions, task_positions)
 
+def sq_linear_dist(pos1, pos2):
+    return np.sum((pos1 - pos2) ** 2)
+
 def linear_dist(pos1, pos2):
-    return np.sqrt(np.sum((pos1 - pos2) ** 2))
+    return np.sqrt(sq_linear_dist(pos1, pos2))
 
 def gen_distance_calc_time_fun(agent_positions, task_positions):
     def calc_time_fun(agent_id, task, path: list) -> float:
@@ -95,9 +98,9 @@ def gen_distance_calc_time_fun(agent_positions, task_positions):
 
             for i in range(task_id + 1):
                 if i == 0:
-                    out += linear_dist(agent_positions[agent_id], task_positions[path[i]])
+                    out += sq_linear_dist(agent_positions[agent_id], task_positions[path[i]])
                 else:
-                    out += linear_dist(task_positions[path[i - 1]], task_positions[path[i]])
+                    out += sq_linear_dist(task_positions[path[i - 1]], task_positions[path[i]])
 
             return out
         else:

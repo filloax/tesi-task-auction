@@ -1,12 +1,16 @@
 #!/bin/bash
 
-echo "Testing with agent amounts from 3 to 25"
+min=5
+max=20
+step=3
+
+echo "Testing with agent amounts from $min to $max"
 
 echo "agents num,avg CBAA opt diff(%),avg CBBA opt diff(%),avg CBAA time(ms),avg CBBA time(ms),avg CBAA iterations,avg CBBA iterations,CBAA conflicts,CBBA conflicts" > compare_results.csv
 
 local_path=$(realpath .)
 
-for n_agents in $(seq 3 2 21); do
+for n_agents in $(seq "$min" "$step" "$max"); do
 	echo "Testing with $n_agents agents:"
 	TMP=$(mktemp)
 	# TMP="$local_path/tmp.txt"
@@ -30,7 +34,7 @@ for n_agents in $(seq 3 2 21); do
 	cbaa_conflicts=$(cat "$TMP" | grep "WARNING: CBAA had " | awk '{ print $4 }')
 	test -z "$cbaa_conflicts" && cbaa_conflicts="0"
 	cbba_conflicts=$(cat "$TMP" | grep "WARNING: CBBA had " | awk '{ print $4 }')
-	test -z "$cbaa_conflicts" && cbba_conflicts="0"
+	test -z "$cbba_conflicts" && cbba_conflicts="0"
 
 	res="$n_agents,$diff_cbaa_avg,$diff_cbba_avg,$time_cbaa_avg,$time_cbba_avg,$it_cbaa_avg,$it_cbba_avg,$cbaa_conflicts,$cbba_conflicts"
 	echo "$res" >> "$local_path/compare_results.csv"
