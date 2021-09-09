@@ -4,7 +4,7 @@ import math
 import sys
 from utils import bids_to_string, sol_to_string
 from task_seq_tester import TaskTester
-from bundle_algo import BundleAlgorithm, TimeScoreFunction
+from bundle_algo import BundleAlgorithm, DistanceScoreFunction
 from task_positions import gen_distance_calc_time_fun, generate_positions, load_positions, write_positions
 import random
 from disropt.functions import Variable
@@ -56,12 +56,12 @@ class TesterCBBA(TaskTester):
         if agent_positions is None or task_positions is None:
             (agent_positions, task_positions) = generate_positions(num_agents, num_tasks)
             if not silent:
-                write_positions(agent_positions, task_positions)
+                write_positions(agent_positions, task_positions, log_file=log_file)
 
         # Inizializza dati degli agenti
         agents = [BundleAlgorithm(id, 
             agent = None, 
-            score_function = TimeScoreFunction(id, [0.9 for task in tasks], gen_distance_calc_time_fun(agent_positions, task_positions)), 
+            score_function = DistanceScoreFunction(id, agent_positions[id], task_positions, 0.9), 
             tasks = tasks, 
             max_agent_tasks = max_agent_tasks, 
             agent_ids = agent_ids, 
@@ -181,7 +181,7 @@ class TesterCBBA(TaskTester):
             self.log("\nCalcolo c [N: {} / t: {}]:".format(num_agents, num_tasks), do_console=not silent)
 
             for i in agent_ids:
-                score_fun = TimeScoreFunction(i, [0.9 for task in tasks], gen_distance_calc_time_fun(agent_positions, task_positions))
+                score_fun = DistanceScoreFunction(i, agent_positions[i], task_positions, 0.9)
                 for j in tasks:
                     tasks_except_this = tasks.copy()
                     tasks_except_this.remove(j)

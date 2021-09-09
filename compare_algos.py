@@ -21,6 +21,8 @@ from task_seq_tester import TaskTester
 parser = argparse.ArgumentParser(description='Test CBBA and CBAA.')
 parser.add_argument('-N', '--num-agents', help="Amount of agents and tasks. Will be ignored if using positional arguments.", required=True, type=int)
 parser.add_argument('-r', '--runs', default=1, type=int, help="Amount of test runs, if greater than 1 will disable X output and only check c * X.")
+parser.add_argument('--test-same-score', default=False, action='store_true', help="If set, there will always be tasks with the same position as an " + 
+    "agent, the same position of another task, at the same distance of another task, etc to test if bid tie-breaking works")
 parser.add_argument('-v', '--verbose', default=False, action='store_true')
 parser.add_argument('-p', '--iter-progress', default=False, action='store_true', help="Print progress during each run of the algorithms")
 parser.add_argument('-T', '--prog-update-time', default=0.5, type=float, help="Time interval to update each run's progress bars")
@@ -42,7 +44,18 @@ class TestThread(Thread):
         self.result = None
 
     def run(self):
-        os.remove("log.txt")
+        if os.path.exists("log.txt"):
+            os.remove("log.txt")
+
+        with open("log.txt", "w") as logfile:
+            print("Agents:", file=logfile)
+            for i in range(len(self.agent_positions)):
+                print("{}: [{}]".format(i, ' '.join(str(x) for x in self.agent_positions[i])), file=logfile)
+
+            print("Tasks:", file=logfile)
+            for i in range(len(self.task_positions)):
+                print("{}: [{}]".format(i, ' '.join(str(x) for x in self.task_positions[i])), file=logfile)
+
         time_before = time.time()
         ret = self.tester.run(
             num_agents = self.num_agents, 
@@ -56,7 +69,8 @@ class TestThread(Thread):
         tim = time.time() - time_before
         self.result = (ret[0], ret[1], tim)
 
-def do_test(num_agents: int, runs: int, verbose = False, print_iter_progress = False, prog_update_time = 0.5):
+def do_test(num_agents: int, runs: int, verbose = False, print_iter_progress = False, prog_update_time = 0.5,
+    test_same_score = True):
     results = []
 
     num_tasks = num_agents
@@ -71,9 +85,9 @@ def do_test(num_agents: int, runs: int, verbose = False, print_iter_progress = F
             print("\n\n\n\n########################\n##### Run #{} #####\n########################\n\n\n\n".format(i))
 
         (agent_positions, task_positions) = generate_positions(num_agents, num_tasks, 
-            test_tasks_same_distance=True, 
-            test_same_distance=True, 
-            test_same_positions=True
+            test_tasks_same_distance=test_same_score, 
+            test_same_distance=test_same_score, 
+            test_same_positions=test_same_score
             )
         if runs == 1:
             write_positions(agent_positions, task_positions)
@@ -264,11 +278,11 @@ def printIterationsProgress(suffix, iterations, win_bids_list, num_agents, solut
             print(' ' * (sol_line_len + str_1_len), flush=True)
         print(MOVE_TO_PREV_LINE_START * (num_agents + 3), flush=True)
 
-def main(agent_nums_to_test: list, runs: int, verbose = False, print_iter_progress = False, prog_update_time = 0.5):
+def main(agent_nums_to_test: list, runs: int, verbose = False, print_iter_progress = False, prog_update_time = 0.5, test_same_score = True):
     if len(agent_nums_to_test) == 0:
         raise ValueError("Needs at least one agent number to test with")
     elif len(agent_nums_to_test) == 1:
-        do_test(agent_nums_to_test[0], runs, verbose, print_iter_progress, prog_update_time)
+        do_test(agent_nums_to_test[0], runs, verbose, print_iter_progress, prog_update_time, test_same_score)
     else:
         pass
 
@@ -279,4 +293,4 @@ if __name__ == '__main__':
     if len(multi_agents) == 0:
         multi_agents = [args.num_agents]
 
-    main(multi_agents, args.runs, args.verbose, args.iter_progress, args.prog_update_time)
+    main(multi_agents, args.runs, args.verbose, args.iter_progress, args.prog_update_time, args.test_same_score)

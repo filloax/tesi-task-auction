@@ -1,4 +1,5 @@
 import math
+from task_positions import linear_dist, sq_linear_dist
 import numpy as np
 from disropt.agents import Agent
 import time
@@ -391,7 +392,7 @@ class TimeScoreFunction(ScoreFunction):
 
     Init:
     agent_id: id of the agent
-    time_discount_factors: float list containing static discount factors for each task
+    task_discount_factors: float list containing static discount factors for each task
     calc_time_fun: function(agent_id, task, path) -> float, to calculate agent travel time to arrive at task location
         through the specified path.
     task_static_scores: static scores for each tasks' result to be multiplied by, must be a list.
@@ -405,6 +406,40 @@ class TimeScoreFunction(ScoreFunction):
     def do_eval(self, path: list) -> float:
         return sum((self.task_discount_factors[task] ** self.calc_time_fun(self.agent_id, task, path)
             * (self.task_static_scores[task] if not self.task_static_scores is None else 1)) for task in path)
+
+class DistanceScoreFunction(ScoreFunction):
+    """
+    S_{i} function for the CBBA algorithm. Calculates score based on distance.
+
+    Init:
+    agent_id: id of the agent
+    agent_positions: agent position
+    task_positions: list of task positions
+    task_discount_factor: float between 0 and 1 for the function to work.
+    squared_dist: if should use squared distance instead of standard, more optimized and since it's used for 
+        comparision it still works for CBBA purposes, defaults to True
+    """
+    def __init__(self, agent_id, agent_position, task_positions, task_discount_factor, 
+            squared_dist = True):
+        super().__init__(agent_id)
+        self.agent_position = agent_position
+        self.task_positions = task_positions
+        self.task_discount_factor = task_discount_factor
+        self.squared_dist = squared_dist
+
+    def do_eval(self, path: list) -> float:
+        dist = sq_linear_dist if self.squared_dist else linear_dist
+        total_dist = 0
+
+        for k, task in enumerate(path):
+            if k == 0:
+                total_dist += dist(self.agent_position, self.task_positions[task])
+            else:
+                total_dist += dist(self.task_positions[task - 1], self.task_positions[task])
+        
+        return self.task_discount_factor ** total_dist
+
+
 
 
 ## Utilità

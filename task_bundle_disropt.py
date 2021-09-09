@@ -1,7 +1,7 @@
 # lancio tramite
 # mpirun -np N python taskAssignDisropt.py
 
-from bundle_algo import BundleAlgorithm, TimeScoreFunction
+from bundle_algo import BundleAlgorithm, DistanceScoreFunction
 import time, sys, math
 import numpy as np
 from mpi4py import MPI
@@ -55,23 +55,8 @@ def main():
 
     tasks = list(range(len(task_positions)))
 
-    def calc_time_fun(agent_id, task, path: list) -> float:
-        if task in path:
-            task_id = path.index(task)
-            out = 0
-
-            for i in range(task_id + 1):
-                if i == 0:
-                    out += linear_dist(agent_positions[agent_id], task_positions[path[i]])
-                else:
-                    out += linear_dist(task_positions[path[i - 1]], task_positions[path[i]])
-
-            return out
-        else:
-            raise ValueError("Task not present in specified path!")
-
-    time_score_fun = TimeScoreFunction(agent.id, [0.9 for task in tasks], calc_time_fun)
-    task_agent = BundleAlgorithm(agent.id, agent, time_score_fun, tasks, max_agent_tasks, agent_ids, verbose)
+    score_fun = DistanceScoreFunction(agent.id, agent_positions[local_rank], task_positions, 0.9)
+    task_agent = BundleAlgorithm(agent.id, agent, score_fun, tasks, max_agent_tasks, agent_ids, verbose)
 
     task_agent.run(incr_runs)
 

@@ -1,12 +1,13 @@
 #!/bin/bash
 
-min=5
-max=20
-step=3
+min="${1:-5}"
+max="${2:-20}"
+step="${3:-3}"
+runs_each="${4:-20}"
 
 echo "Testing with agent amounts from $min to $max"
 
-echo "agents num,avg CBAA opt diff(%),avg CBBA opt diff(%),avg CBAA time(ms),avg CBBA time(ms),avg CBAA iterations,avg CBBA iterations,CBAA conflicts,CBBA conflicts" > compare_results.csv
+echo "agents num;avg CBAA opt diff(%);avg CBBA opt diff(%);avg CBAA time(ms);avg CBBA time(ms);avg CBAA iterations;avg CBBA iterations;CBAA conflicts;CBBA conflicts" > compare_results.csv
 
 local_path=$(realpath .)
 
@@ -14,7 +15,7 @@ for n_agents in $(seq "$min" "$step" "$max"); do
 	echo "Testing with $n_agents agents:"
 	TMP=$(mktemp)
 	# TMP="$local_path/tmp.txt"
-	python3 "$local_path/compare_algos.py" -p -T 0.1 -N $n_agents -r 20 $* > "$TMP" &
+	python3 "$local_path/compare_algos.py" -p -T 0.1 -N $n_agents -r "$runs_each" > "$TMP" &
 	compare_pid=$!
 	echo "Started with pid: $compare_pid"
 	tail -f -n +0 "$TMP" &
@@ -36,8 +37,8 @@ for n_agents in $(seq "$min" "$step" "$max"); do
 	cbba_conflicts=$(cat "$TMP" | grep "WARNING: CBBA had " | awk '{ print $4 }')
 	test -z "$cbba_conflicts" && cbba_conflicts="0"
 
-	res="$n_agents,$diff_cbaa_avg,$diff_cbba_avg,$time_cbaa_avg,$time_cbba_avg,$it_cbaa_avg,$it_cbba_avg,$cbaa_conflicts,$cbba_conflicts"
-	echo "$res" >> "$local_path/compare_results.csv"
+	res="$n_agents;$diff_cbaa_avg;$diff_cbba_avg;$time_cbaa_avg;$time_cbba_avg;$it_cbaa_avg;$it_cbba_avg;$cbaa_conflicts;$cbba_conflicts"
+	echo "$res" | tr '.' ',' >> "$local_path/compare_results.csv"
 	echo "Done with results:"
 	echo "$res"
 	rm "$TMP"
