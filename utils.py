@@ -19,4 +19,4 @@ def bids_to_string(bids):
 def sol_to_string(agents = None, sol = None):
     if sol is None:
         sol = [agent.assigned_tasks for agent in agents]
-    return str(np.array(sol)).replace("0.", "_ ")
+    return str(np.array(sol)).replace("0.", "_").replace("1.", "1")
