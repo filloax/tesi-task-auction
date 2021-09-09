@@ -21,10 +21,17 @@ class ScoreFunction:
     def do_eval(self, path: list) -> float:
         pass
 
+# TODO: gestione di task non validi per certi agenti rispetto ad altri,
+# semi-implementato ma al momento se un agente A può fare 4 task e un agente B solo 2, 
+# e A fa un offerta più alta di B su quei 2 task, B rimarrà bloccato; necessario un
+# sistema di priorità per agenti che hanno solo quei task/meno task per evitare questa situazione
 class BundleAlgorithm:
     def __init__(self, id, agent: Agent, score_function: ScoreFunction, tasks: list, max_agent_tasks: int, agent_ids: list, 
         verbose = False, log_file = '',
         reset_path_on_bundle_change = True, valid_tasks: list = None):
+
+        if len(tasks) != tasks[-1] + 1:
+            raise ValueError("Incomplete task lists not supported by current version of CBBA")
 
         self.id = id
         self.agent = agent
@@ -33,7 +40,8 @@ class BundleAlgorithm:
         self.score_function = score_function
 
         self.max_agent_tasks = max_agent_tasks
-        self.tasks = tasks
+        self.tasks = tasks.copy()
+        self.tasks.sort()
         if valid_tasks != None:
             self.valid_tasks = valid_tasks
         else:
@@ -41,9 +49,11 @@ class BundleAlgorithm:
             self.valid_tasks = tasks.copy()
         # Nel caso in cui non tutti i task siano noti a priori, questo numero può venire aggiornato
         # include i task non noti (ipotizzando che se esiste task n, esistono tutti i task <= n)
-        self.num_tasks = max(tasks) + 1
-        self.agent_ids = agent_ids
-        self.num_agents = max(agent_ids) + 1
+        # +1 visto che i task partono da 0 (sempre per ipotesi)
+        self.num_tasks = self.tasks[-1] + 1
+        self.agent_ids = agent_ids.copy()
+        self.agent_ids.sort()
+        self.num_agents = self.agent_ids[-1] + 1
 
         self.verbose = verbose
         self.log_file = log_file
@@ -71,6 +81,8 @@ class BundleAlgorithm:
         # CHIEDERE
         self.done_neighbors = [] 
 
+        self.log_verbose(0, "Init with tasks: {} | {}".format(self.tasks, self.num_tasks))
+
     def construct_phase(self, iter_num="."):
         self.log_verbose(iter_num, "pre construct bundle: {} path: {}".format(self.task_bundle, self.task_path))
 
@@ -92,14 +104,14 @@ class BundleAlgorithm:
             # Questo è c_{ij}, la funzione di costo (o meglio, guadagno)
             # consiste in quanto l'aggiunta di un dato task sia in grado
             # di aumentare il punteggio del percorso
-            self.bids = np.array([self.calc_task_bid(task) for task in self.tasks])
+            self.bids = np.array([self.calc_task_bid(task) for task in range(self.num_tasks)])
 
             if any(bid < 0 for bid in self.bids):
                 raise ValueError("Got negative score improvement in CBBA. Negative values are not supported, if you need to find a minimum instead of a maximum you can usually use 1/x, 0.y^x or similar somewhere in the score function.")
 
             selected_task = -1
 
-            self.log_verbose(iter_num, "self.bids: {}".format(bids_to_string([bid if task in self.bids else 0 for (task, bid) in enumerate(self.bids)])))
+            self.log_verbose(iter_num, "self.bids: {}".format(bids_to_string(self.bids)))
 
             if any(self.bids[task] > 0 and self._bid_is_greater(self.bids[task], self.winning_bids[self.id][task], self.id, self.winning_agents[self.id][task]) for task in self.tasks):
                 max_score_improvement = max(self.bids[task] for task in self.tasks if self.bids[task] > 0 and self._bid_is_greater(self.bids[task], self.winning_bids[self.id][task], self.id, self.winning_agents[self.id][task]))
@@ -137,6 +149,34 @@ class BundleAlgorithm:
                 return max(self.score_function.eval(insert_in_list(self.task_path, n, task)) for n in range(len(self.task_path))) - start_score
             else:
                 return self.score_function.eval([task]) - start_score
+
+    def handle_received_data(self, iter_num=".", other_id: int = -1, other_data:dict = None, rec_time:float = -1):
+        self.log_verbose("Received data from {}: {}".format(other_id, other_data))
+
+        other_agent_tasks = range(len(other_data["winning_bids"]))
+
+        self.log_verbose(iter_num, "Received tasks from {}: {} (own are {})".format(other_id, list(other_agent_tasks), self.tasks))
+
+        for task in other_agent_tasks:
+            if task not in self.tasks:
+                self._add_task_to_known(task)
+                self.log(iter_num, "Learned of new task: {}, num tasks known: {}, now knows: {}".format(task, self.num_tasks, self.tasks))
+
+        other_num_tasks = max(other_agent_tasks) + 1
+        if other_num_tasks < self.num_tasks:
+            other_data["winning_agents"] = np.concatenate((other_data["winning_agents"], -np.ones(self.num_tasks - other_num_tasks)))
+            other_data["winning_bids"] = np.concatenate((other_data["winning_bids"], np.zeros(self.num_tasks - other_num_tasks)))
+
+        self.winning_agents[other_id] = other_data["winning_agents"]
+        self.winning_bids[other_id] = other_data["winning_bids"]
+        self.message_times[other_id] = other_data["message_times"]
+        self.changed_ids.append(other_id)
+        self.message_times[self.id][other_id] = rec_time
+
+        if other_data["done"]:
+            self.done_neighbors.append(other_id)
+
+        pass
 
     def conflict_resolve_phase(self, iter_num="."):
         self.log_verbose(iter_num, "Pre conf res state: agents: {} bids: {} bundle: {}".format(self.winning_agents[self.id], self.winning_bids[self.id], self.task_bundle))
@@ -256,6 +296,13 @@ class BundleAlgorithm:
                 self.assigned_tasks[task2] = 0
 
     def check_done(self, iter_num="."):
+        # Numero di iterazioni senza alterazioni nello stato rilevante per considerare l'operazione finita
+        num_stable_runs = 2 * self.num_agents * self.max_agent_tasks + 1
+        # Se sono stati impostati abbastanza bid per i task non ignorati
+        # abbastanza = min(Nu * Lt, Nt)
+        num_max_bids_set = sum(1 for task in self.tasks if self.winning_bids[self.id][task] != 0)
+        enough_max_bids_set = num_max_bids_set >= min(self.num_tasks, self.num_agents * self.max_agent_tasks)
+
         # Se la lista dei bid è rimasta invariata
         if not (self.winning_bids[self.id] == self.prev_win_bids).all():
             self.prev_win_bids = self.winning_bids[self.id].copy()
@@ -263,14 +310,7 @@ class BundleAlgorithm:
             self.log_verbose(iter_num, "Max bids table changed: {}".format(self.winning_bids[self.id]))
         else:
             self.win_bids_equal_cnt += 1
-            self.log_verbose(iter_num, "win_bids_equal_cnt: {}".format(self.win_bids_equal_cnt))
-
-        # Numero di iterazioni senza alterazioni nello stato rilevante per considerare l'operazione finita
-        num_stable_runs = 2 * self.num_agents * self.max_agent_tasks + 1
-        # Se sono stati impostati abbastanza bid per i task non ignorati
-        # abbastanza = min(Nu * Lt, Nt)
-        num_max_bids_set = sum(1 for task in self.tasks if not self._ignores_task(task) and self.winning_bids[self.id][task] != 0)
-        enough_max_bids_set = num_max_bids_set >= min(self.num_tasks, self.num_agents * self.max_agent_tasks)
+            self.log_verbose(iter_num, "win_bids_equal_cnt: {}; max_bids_set: {}/{}".format(self.win_bids_equal_cnt, num_max_bids_set, min(self.num_tasks, self.num_agents * self.max_agent_tasks)))
 
         return sum(self.assigned_tasks) <= self.max_agent_tasks and enough_max_bids_set and self.win_bids_equal_cnt >= num_stable_runs
 
@@ -285,18 +325,11 @@ class BundleAlgorithm:
         if set(self.agent.in_neighbors) != set(self.done_neighbors):
             data = self.agent.neighbors_exchange(send_data)
             rec_time = time.time()
-            self.log_verbose(iter_num, "post exchange, received: {}".format(data))
+            self.log_verbose(iter_num, "post exchange")
 
             self.changed_ids = []
             for other_id in filter(lambda id: id != self.id, data):
-                self.winning_agents[other_id] = data[other_id]["winning_agents"]
-                self.winning_bids[other_id] = data[other_id]["winning_bids"]
-                self.message_times[other_id] = data[other_id]["message_times"]
-                self.changed_ids.append(other_id)
-                self.message_times[self.id][other_id] = rec_time
-
-                if data[other_id]["done"]:
-                    self.done_neighbors.append(other_id)
+                self.handle_received_data(iter_num, other_id, data[other_id], rec_time)
         else:
             self.agent.neighbors_send(send_data)
             self.changed_ids = []
@@ -357,6 +390,25 @@ class BundleAlgorithm:
 
     def _ignores_task(self, task):
         return task not in self.valid_tasks
+
+    def _add_task_to_known(self, task):
+        if task in self.tasks:
+            return
+
+        self.tasks.append(task)
+        self.tasks.sort()
+        prev_num = self.num_tasks
+        self.num_tasks = self.tasks[-1] + 1
+
+        if self.num_tasks > prev_num:
+            diff_zeros = np.zeros(self.num_tasks - prev_num)
+            self.bids = np.concatenate((self.bids, diff_zeros))
+            self.winning_bids = np.concatenate((self.winning_bids, np.zeros((self.num_agents, self.num_tasks - prev_num))), axis=1)
+            self.winning_agents = np.concatenate((self.winning_agents, -np.ones((self.num_agents, self.num_tasks - prev_num))), axis=1)
+            self.prev_win_bids = np.concatenate((self.prev_win_bids, diff_zeros))
+            self.assigned_tasks = np.concatenate((self.assigned_tasks, diff_zeros))
+        elif self.num_tasks < prev_num:
+            raise RuntimeError("Tasks somehow decreased after adding a new one")
 
     def __repr__(self):
         return str(self.__dict__)
