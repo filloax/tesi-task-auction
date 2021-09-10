@@ -14,13 +14,13 @@ runs_each=20
 out_path = "compare_results.csv"
 
 if len(sys.argv) > 1:
-	min = sys.argv[1]
+	min = int(sys.argv[1])
 	if len(sys.argv) > 2:
-		max = sys.argv[2]
+		max = int(sys.argv[2])
 		if len(sys.argv) > 3:
-			step = sys.argv[3]
+			step = int(sys.argv[3])
 			if len(sys.argv) > 4:
-				runs_each = sys.argv[4]
+				runs_each = int(sys.argv[4])
 
 print(f"Testing with agent amounts from {min} to {max}")
 
@@ -35,7 +35,8 @@ class DupOut:
 
 	def flush(self):
 		self.stdout.flush()
-		self.file.flush()
+		if not self.file.closed:
+			self.file.flush()
 
 
 
@@ -58,13 +59,15 @@ for n_agents in range(min, max + 1, step):
 	done1 = False
 
 	try:
-		with open(tmp_path, "w") as tmp_file:
+		with open(tmp_path, "w", encoding='utf-8') as tmp_file:
 			sys.stdout = DupOut(sys.stdout, tmp_file)
-			do_test(n_agents, runs_each, False, True, 0.1)
+			do_test(n_agents, runs_each, verbose=False, print_iter_progress=True, prog_update_time=0.1, test_same_score=False)
+			sys.stdout.flush()
 			sys.stdout = stdout_bak
 			done1 = True
 	finally:
 		if not done1:
+			os.close(tmp_fd)
 			os.remove(tmp_path)
 
 
@@ -80,7 +83,7 @@ for n_agents in range(min, max + 1, step):
 	cbaa_conflicts = 0
 	cbba_conflicts = 0
 	try:
-		with open(tmp_path, "r") as tmp_file:
+		with open(tmp_path, "r", encoding='utf-8') as tmp_file:
 			for line in tmp_file:
 				if "Avg. CBAA" in line:
 					segs = line.split(": ")
@@ -97,6 +100,7 @@ for n_agents in range(min, max + 1, step):
 				elif "WARNING: CBBA had " in line:
 					cbba_conflicts = line.split(" ")[3]
 	finally:
+		os.close(tmp_fd)
 		os.remove(tmp_path)
 
 	res=f"{n_agents};{diff_cbaa_avg};{diff_cbba_avg};{time_cbaa_avg};{time_cbba_avg};{it_cbaa_avg};{it_cbba_avg};{cbaa_conflicts};{cbba_conflicts}"
