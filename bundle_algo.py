@@ -8,9 +8,12 @@ try:
 except ImportError:
     from .utils import *
 
+from decimal import Decimal
+
 class ScoreFunction:
     def __init__(self, agent_id: int):
         self.agent_id = agent_id
+        self.use_decimal = False #replace in extension if so
 
     def eval(self, path: list) -> float:
         if len(path) == 0:
@@ -83,6 +86,12 @@ class BundleAlgorithm:
 
         self.log_verbose(0, "Init with tasks: {} | {}".format(self.tasks, self.num_tasks))
 
+        if self.score_function.use_decimal:
+            self.bids = np.array(list(map(lambda x: Decimal(x), self.bids)))
+            self.winning_bids = np.array(list(map(lambda row: list(map(lambda x: Decimal(x), row)), self.winning_bids)))
+            self.prev_win_bids = np.array(list(map(lambda x: Decimal(x), self.prev_win_bids)))
+            self.log_verbose(0, "Using Decimals for bids as score function uses them")
+
     def construct_phase(self, iter_num="."):
         self.log_verbose(iter_num, "pre construct bundle: {} path: {}".format(self.task_bundle, self.task_path))
 
@@ -124,7 +133,7 @@ class BundleAlgorithm:
                 self.log_verbose(iter_num, "Out of tasks".format(self.id, iter_num))
                 break
 
-            self.log_verbose(iter_num, "Selected task {}\tbid is {} > {}".format(selected_task, round(self.bids[selected_task], 3), round(self.winning_bids[self.id][selected_task], 3)))
+            self.log_verbose(iter_num, "Selected task {}\tbid is {} > {}".format(selected_task, bid_to_str(self.bids[selected_task]), bid_to_str(self.winning_bids[self.id][selected_task])))
 
             task_position = 0
             if len(self.task_path) > 0:
@@ -151,16 +160,18 @@ class BundleAlgorithm:
                 return self.score_function.eval([task]) - start_score
 
     def handle_received_data(self, iter_num=".", other_id: int = -1, other_data:dict = None, rec_time:float = -1):
-        self.log_verbose("Received data from {}: {}".format(other_id, other_data))
+        if other_data["winning_agents"] != self.winning_agents or other_data["winning_bids"] != self.winning_bids:
+            self.log_verbose("Received data from {}: {}".format(other_id, other_data))
 
-        other_agent_tasks = range(len(other_data["winning_bids"]))
+        other_agent_tasks = list(range(len(other_data["winning_bids"])))
 
-        self.log_verbose(iter_num, "Received tasks from {}: {} (own are {})".format(other_id, list(other_agent_tasks), self.tasks))
+        if other_agent_tasks != self.tasks:
+            self.log_verbose(iter_num, "Received tasks from {}: {} (own are {})".format(other_id, other_agent_tasks, self.tasks))
 
-        for task in other_agent_tasks:
-            if task not in self.tasks:
-                self._add_task_to_known(task)
-                self.log(iter_num, "Learned of new task: {}, num tasks known: {}, now knows: {}".format(task, self.num_tasks, self.tasks))
+            for task in other_agent_tasks:
+                if task not in self.tasks:
+                    self._add_task_to_known(task)
+                    self.log(iter_num, "Learned of new task: {}, num tasks known: {}, now knows: {}".format(task, self.num_tasks, self.tasks))
 
         other_num_tasks = max(other_agent_tasks) + 1
         if other_num_tasks < self.num_tasks:
@@ -179,7 +190,9 @@ class BundleAlgorithm:
         pass
 
     def conflict_resolve_phase(self, iter_num="."):
-        self.log_verbose(iter_num, "Pre conf res state: agents: {} bids: {} bundle: {}".format(self.winning_agents[self.id], self.winning_bids[self.id], self.task_bundle))
+        self.log_verbose(iter_num, "Pre conf res state: agents: {}".format(self.winning_agents[self.id]))
+        self.log_verbose(iter_num, "bids: {}".format(bids_to_string(self.winning_bids[self.id])))
+        self.log_verbose(iter_num, "bundle: {}".format(self.task_bundle))
 
         self.log_verbose(iter_num, "To update: ")
         for other_id in self.changed_ids:
@@ -189,18 +202,56 @@ class BundleAlgorithm:
             self.log_verbose(iter_num, "\t{}: {}".format(id, self.message_times[id]))
 
         for other_id in self.changed_ids:
+            reset = []
+            updated = []
             for task in self.tasks:
-                self.update_choice(other_id, task, iter_num)
+                action = self.update_choice(other_id, task)
+                
+                changed = False
+
+                if action == "update":
+                    self.winning_bids[self.id][task] = self.winning_bids[other_id][task]
+                    self.winning_agents[self.id][task] = self.winning_agents[other_id][task]
+                    changed = True
+                    updated.append(task)
+                elif action == "reset":
+                    self.winning_bids[self.id][task] = 0
+                    self.winning_agents[self.id][task] = -1
+                    changed = True
+                    reset.append(task)
+
+                if changed and task in self.task_bundle:
+                    start_idx = min(n for n in range(len(self.task_bundle)) if self.winning_agents[self.id][self.task_bundle[n]] != self.id)
+
+                    for i in range(start_idx + 1, len(self.task_bundle)):
+                        self.winning_bids[self.id][self.task_bundle[i]] = 0
+                        self.winning_agents[self.id][self.task_bundle[i]] = -1
+
+                    for i in range(start_idx, len(self.task_bundle)):
+                        task2 = self.task_bundle.pop()
+                        if len(self.task_path) > 0:
+                            if self.reset_path_on_bundle_change:
+                                self.task_path = [] # Ricalcola per mantenere ottimizzazione
+                            else:
+                                self.task_path.remove(task2)
+                        self.assigned_tasks[task2] = 0
+            if len(updated) > 0:
+                self.log_verbose(iter_num, "Updated from {} at tasks: {}".format(other_id, updated))
+            if len(reset) > 0:
+                self.log_verbose(iter_num, "Reset from {} at tasks: {}".format(other_id, reset))
+
 
         # Aggiorna s_{ij} con valori per gli agenti non direttamente raggiungibili
         if len(self.changed_ids) > 0:
             for non_changed_id in filter(lambda id: id not in self.changed_ids and id != self.id, self.agent_ids):
                 self.message_times[self.id][non_changed_id] = max(self.message_times[m][non_changed_id] for m in self.changed_ids + [self.id])
 
-        self.log_verbose(iter_num, "Post conf res state: agents: {} bids: {} bundle: {}".format(self.winning_agents[self.id], self.winning_bids[self.id], self.task_bundle))
+        self.log_verbose(iter_num, "Post conf res state: agents: {}".format(self.winning_agents[self.id]))
+        self.log_verbose(iter_num, "bids: {}".format(bids_to_string(self.winning_bids[self.id])))
+        self.log_verbose(iter_num, "bundle: {}".format(self.task_bundle))
         self.log_verbose(iter_num, "\tMessage times: {}".format(self.message_times[self.id]))
 
-    def update_choice(self, other_id, task, iter_num):
+    def update_choice(self, other_id, task):
         action_default = "leave"
         # Prima chiave tabella: valori dell'agente vincitore secondo l'altro agente che
         # ha inviate i dati;
@@ -261,39 +312,14 @@ class BundleAlgorithm:
         else:
             this_choice = this_id
 
-        choice = case_table.get(sender_choice).get(this_choice)
+        action = case_table.get(sender_choice).get(this_choice)
 
         # Evaluate conditionals
-        if not (type(choice) is str):
-            choice = choice(int(sender_id), int(this_id))
+        if not (type(action) is str):
+            action = action(int(sender_id), int(this_id))
 
-        changed = False
+        return action
 
-        if choice == "update":
-            self.log_verbose(iter_num, "Updating from {} at task {}".format(other_id, task, self.winning_bids[other_id][task], self.winning_agents[other_id][task]))
-            self.winning_bids[self.id][task] = self.winning_bids[other_id][task]
-            self.winning_agents[self.id][task] = self.winning_agents[other_id][task]
-            changed = True
-        elif choice == "reset":
-            self.log_verbose(iter_num, "Resetting from {} at task {}".format(other_id, task))
-            self.winning_bids[self.id][task] = 0
-            self.winning_agents[self.id][task] = -1
-            changed = True
-
-        if changed and task in self.task_bundle:
-            start_idx = min(n for n in range(len(self.task_bundle)) if self.winning_agents[self.id][self.task_bundle[n]] != self.id)
-
-            for i in range(start_idx + 1, len(self.task_bundle)):
-                self.winning_bids[self.id][self.task_bundle[i]] = 0
-                self.winning_agents[self.id][self.task_bundle[i]] = -1
-
-            for i in range(start_idx, len(self.task_bundle)):
-                task2 = self.task_bundle.pop()
-                if self.reset_path_on_bundle_change:
-                    self.task_path = [] # Ricalcola per mantenere ottimizzazione
-                else:
-                    self.task_path.remove(task2)
-                self.assigned_tasks[task2] = 0
 
     def check_done(self, iter_num="."):
         # Numero di iterazioni senza alterazioni nello stato rilevante per considerare l'operazione finita
@@ -476,8 +502,22 @@ class DistanceScoreFunction(ScoreFunction):
         super().__init__(agent_id)
         self.agent_position = agent_position
         self.task_positions = task_positions
-        self.task_discount_factor = task_discount_factor
         self.squared_dist = squared_dist
+
+        # Usa Decimal se sono presenti grandi distanze
+        dist = sq_linear_dist if self.squared_dist else linear_dist
+        for tpos in task_positions:
+            # errore di arrotondamento float, *3 per provare a coprire 
+            # percorsi lunghi attraverso i task
+            if task_discount_factor ** (dist(agent_position, tpos) * 3) == 0:
+                self.use_decimal = True
+                break
+
+        if self.use_decimal:
+            self.task_discount_factor = Decimal(task_discount_factor) # per gestione di grandi distanze
+        else:
+            self.task_discount_factor = task_discount_factor
+
 
     def do_eval(self, path: list) -> float:
         dist = sq_linear_dist if self.squared_dist else linear_dist
@@ -489,6 +529,8 @@ class DistanceScoreFunction(ScoreFunction):
             else:
                 total_dist += dist(self.task_positions[task - 1], self.task_positions[task])
         
+        # task_discount_factor è Decimal, quindi operazione automaticamente tra Decimal
+        # funzionano ugualmente ai float nel contesto dell'algoritmo tanto
         return self.task_discount_factor ** total_dist
 
 

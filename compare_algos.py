@@ -75,6 +75,8 @@ def do_test(num_agents: int, runs: int, verbose = False, print_iter_progress = F
 
     num_tasks = num_agents
 
+    np.set_printoptions(precision = 3, linewidth = 999)
+
     print("Running with {} agents and {} tasks:\n".format(num_agents, num_tasks))
 
     for i in range(runs):
@@ -87,7 +89,8 @@ def do_test(num_agents: int, runs: int, verbose = False, print_iter_progress = F
         (agent_positions, task_positions) = generate_positions(num_agents, num_tasks, 
             test_tasks_same_distance=test_same_score, 
             test_same_distance=test_same_score, 
-            test_same_positions=test_same_score
+            test_same_positions=test_same_score,
+            test_far_agent = False,
             )
         if runs == 1:
             write_positions(agent_positions, task_positions)

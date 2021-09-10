@@ -32,6 +32,7 @@ def generate_positions(num_agents: int, num_tasks: int,
         avoid_same_positions: bool = False, 
         test_same_distance: bool = False,
         test_tasks_same_distance: bool = False,
+        test_far_agent: bool = False,
         ):
     plane_size = 40
 
@@ -64,6 +65,9 @@ def generate_positions(num_agents: int, num_tasks: int,
     if test_same_distance:
         # Rifletti agente -2 intorno a task 0 partendo da agente 0 così da avere la stessa distanza
         agent_positions[-2] = -agent_positions[0] + task_positions[0] * 2
+
+    if test_far_agent:
+        agent_positions[-3] = np.array((plane_size, plane_size)) * 10
 
     return (agent_positions, task_positions)
 
