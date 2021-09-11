@@ -245,18 +245,25 @@ def printProgressBar (iteration, total, prefix = '', suffix = '', decimals = 1, 
     if iteration == total: 
         print()
 
-def printIterationsProgress(suffix, iterations, win_bids_list, num_agents, solution, start = False, go_back_only = False):
+def printIterationsProgress(suffix, iterations, win_bids_list, num_agents, solution: np, start = False, go_back_only = False):
     required_const_bids = num_agents * 2 + 1
-    if not start:
-        print(MOVE_TO_PREV_LINE_START * (num_agents + 2), flush=True)
-    else:
-        print(flush=True)
 
     id_len = len(str(num_agents))
     id_str = "{:" + str(id_len) + "d}"
     str_1_len = id_len + 31
-    sol_lines = sol_to_string(sol=solution).split("\n") if solution is not None else ["" for i in range(num_agents)]
-    sol_line_len = max(len(line) for line in sol_lines)
+    sol_lines = sol_to_string(sol=solution).split("\n") if solution is not None and solution.size > 0 else ["" for i in range(num_agents)]
+    # sol_line_len = max(len(line) for line in sol_lines) if solution is not None and solution.size > 0 else 3 + 2 * num_agents
+    sol_line_len = 3 + 2 * num_agents
+
+    expected_line_len = str_1_len + sol_line_len
+    print_solution = True
+    if expected_line_len > 76:
+        print_solution = False
+
+    if not start:
+        print(MOVE_TO_PREV_LINE_START * (num_agents + 2), flush=True)
+    else:
+        print(flush=True)
 
     if not go_back_only:
         print("Iteration #{:5d} | {}                   ".format(iterations, suffix), flush=True)
@@ -271,7 +278,14 @@ def printIterationsProgress(suffix, iterations, win_bids_list, num_agents, solut
             else:
                 base_str = (id_str + ":").format(i, len(win_bids_list))
 
-            out = base_str.ljust(str_1_len) + sol_lines[i].ljust(sol_line_len)
+            out = base_str.ljust(str_1_len)
+            if print_solution:
+                out += sol_lines[i].ljust(sol_line_len)
+            elif solution is not None and solution.size > 0:
+                if np.any(solution[i] == 1):
+                    out += (" | selected: " + "{:" + str(id_len) + "d}").format(next(j for j in range(len(solution[i])) if solution[i][j] == 1))
+                else:
+                    out += " | selected: -"
             print(out, flush=True)
     else:
         for i in range(num_agents + 1):
